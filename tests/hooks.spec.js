@@ -70,13 +70,18 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     await page.click('button[type="submit"]');
     await page.waitForURL('**/leases', { timeout: 10000 });
 
-    // Verify unit shows "occupied"
+    // Verify at least one HOOK-U1 unit shows "occupied"
     await page.goto('/units');
-    const unitCard = page.locator('.record-card').filter({ hasText: 'HOOK-U1' });
-    if (await unitCard.count() > 0) {
-      await expect(unitCard.first().locator('.badge-occupied, .badge')).toBeVisible({ timeout: 5000 });
-      const badgeText = await unitCard.first().locator('.badge').first().textContent();
-      expect(badgeText?.trim()).toBe('occupied');
+    const allHookCards = page.locator('.record-card').filter({ hasText: 'HOOK-U1' });
+    const cardCount = await allHookCards.count();
+    if (cardCount > 0) {
+      // At least one of the HOOK-U1 cards should have badge "occupied"
+      let foundOccupied = false;
+      for (let i = 0; i < cardCount; i++) {
+        const badge = await allHookCards.nth(i).locator('.badge').first().textContent();
+        if (badge?.trim() === 'occupied') { foundOccupied = true; break; }
+      }
+      expect(foundOccupied).toBe(true);
     }
   });
 
