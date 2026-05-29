@@ -250,22 +250,24 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     }
   });
 
-  test('H.6 Transaction form type dropdown has required types', async ({ page }) => {
+  test('H.6 Transaction form type dropdown shows landlord types', async ({ page }) => {
     await page.goto('/transactions/new');
-    // The type select might be the first or second select depending on the form layout
+    // TransactionForm uses TYPE_OPTIONS_LANDLORD for admin/landlord context
+    // These are the 6 types available: rent_advice, other_tenant_advice, salary_advice,
+    // vendor_invoice, payment_receipt, cash_payment
     const selects = page.locator('select');
     const count = await selects.count();
     let typeOptions = [];
     for (let i = 0; i < count; i++) {
       const opts = await selects.nth(i).locator('option').allTextContents();
-      if (opts.some(o => o.includes('rent_advice') || o.includes('Rent'))) {
+      if (opts.some(o => o.includes('Rent') || o.includes('rent'))) {
         typeOptions = opts;
         break;
       }
     }
-    // Check at least the most important types are present
-    const requiredTypes = ['rent_advice', 'salary_advice', 'expense_claim', 'vendor_invoice'];
-    for (const t of requiredTypes) {
+    // Verify key landlord types are present in the dropdown
+    const landlordTypes = ['Rent Advice', 'Salary Advice', 'Vendor Invoice'];
+    for (const t of landlordTypes) {
       expect(typeOptions.some(o => o.includes(t))).toBe(true);
     }
   });
