@@ -15,6 +15,8 @@ function yesterday() {
   return d.toISOString().slice(0, 10);
 }
 function today() { return new Date().toISOString().slice(0, 10); }
+// Unique suffix per test run to avoid UNIQUE index conflicts on repeated runs
+const RUN_ID = Date.now().toString().slice(-6);
 
 test.describe('Status Hook Automation (Admin Context)', () => {
   test.use({ storageState: 'auth/adminStorage.json' });
@@ -23,7 +25,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     // Create unit
     await page.goto('/units/new');
     await page.selectOption('select[name="property"]', { index: 1 });
-    await page.fill('input[name="unit_number"]', 'HOOK-U1');
+    await page.fill('input[name="unit_number"]', 'HOOK-U1-'+RUN_ID);
     await page.selectOption('select[name="type"]', 'apartment');
     await page.fill('input[placeholder="15,000"]', '10000');
     await page.click('button[type="submit"]');
@@ -32,7 +34,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
     // Create tenant
     await page.goto('/tenants/new');
-    await page.fill('input[name="first_name"]', 'HookTenant');
+    await page.fill('input[name="first_name"]', 'HookTenant-'+RUN_ID);
     await page.fill('input[name="last_name"]', 'One');
     await page.fill('input[name="phone"]', '+91 5555555501');
     await page.fill('input[name="nationality"]', 'Indian');
@@ -41,7 +43,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     await page.fill('input[name="emergency_contact_name"]', 'Hook EC');
     await page.fill('input[name="emergency_contact_phone"]', '+91 5555555502');
     await page.selectOption('select[name="id_type"]', 'passport');
-    await page.fill('input[name="id_number"]', 'HOOK001');
+    await page.fill('input[name="id_number"]', 'HOOK001-'+RUN_ID);
     await page.locator('input[type="file"]').setInputFiles(TEST_IMAGE);
     await page.click('button[type="submit"]');
     await page.waitForURL('**/tenants', { timeout: 10000 });
@@ -58,7 +60,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     const unitCount = await unitSelect.locator('option').count();
     // Find the HOOK-U1 unit
     const unitOptions = await unitSelect.locator('option').allTextContents();
-    const hookIdx = unitOptions.findIndex(o => o.includes('HOOK-U1'));
+    const hookIdx = unitOptions.findIndex(o => o.includes('HOOK-U1-'+RUN_ID));
     await unitSelect.selectOption({ index: hookIdx > 0 ? hookIdx : unitCount - 1 });
 
     await page.fill('input[name="start_date"]', today());
@@ -72,7 +74,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
     // Verify at least one HOOK-U1 unit shows "occupied"
     await page.goto('/units');
-    const allHookCards = page.locator('.record-card').filter({ hasText: 'HOOK-U1' });
+    const allHookCards = page.locator('.record-card').filter({ hasText: 'HOOK-U1-'+RUN_ID });
     const cardCount = await allHookCards.count();
     if (cardCount > 0) {
       // At least one of the HOOK-U1 cards should have badge "occupied"
@@ -89,7 +91,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     // Create unit
     await page.goto('/units/new');
     await page.selectOption('select[name="property"]', { index: 1 });
-    await page.fill('input[name="unit_number"]', 'HOOK-U2');
+    await page.fill('input[name="unit_number"]', 'HOOK-U2-'+RUN_ID);
     await page.selectOption('select[name="type"]', 'apartment');
     await page.fill('input[placeholder="15,000"]', '10000');
     await page.click('button[type="submit"]');
@@ -97,7 +99,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
     // Create tenant
     await page.goto('/tenants/new');
-    await page.fill('input[name="first_name"]', 'HookTenant');
+    await page.fill('input[name="first_name"]', 'HookTenant-'+RUN_ID);
     await page.fill('input[name="last_name"]', 'Two');
     await page.fill('input[name="phone"]', '+91 5555555503');
     await page.fill('input[name="nationality"]', 'Indian');
@@ -106,7 +108,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     await page.fill('input[name="emergency_contact_name"]', 'Hook2 EC');
     await page.fill('input[name="emergency_contact_phone"]', '+91 5555555504');
     await page.selectOption('select[name="id_type"]', 'passport');
-    await page.fill('input[name="id_number"]', 'HOOK002');
+    await page.fill('input[name="id_number"]', 'HOOK002-'+RUN_ID);
     await page.locator('input[type="file"]').setInputFiles(TEST_IMAGE);
     await page.click('button[type="submit"]');
     await page.waitForURL('**/tenants', { timeout: 10000 });
@@ -120,7 +122,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
     const unitSelect = page.locator('select[name="unit"]');
     const unitOptions = await unitSelect.locator('option').allTextContents();
-    const hookIdx = unitOptions.findIndex(o => o.includes('HOOK-U2'));
+    const hookIdx = unitOptions.findIndex(o => o.includes('HOOK-U2-'+RUN_ID));
     await unitSelect.selectOption({ index: hookIdx > 0 ? hookIdx : 1 });
 
     await page.fill('input[name="start_date"]', '2025-01-01');
@@ -142,7 +144,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
     // Unit should be vacant
     await page.goto('/units');
-    const unitCard = page.locator('.record-card').filter({ hasText: 'HOOK-U2' });
+    const unitCard = page.locator('.record-card').filter({ hasText: 'HOOK-U2-'+RUN_ID });
     if (await unitCard.count() > 0) {
       const badgeText = await unitCard.first().locator('.badge').first().textContent();
       expect(badgeText?.trim()).toBe('vacant');
@@ -151,7 +153,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
   test('H.3 Tenant with active lease has active status', async ({ page }) => {
     await page.goto('/tenants');
-    const hookCard = page.locator('.record-card').filter({ hasText: 'HookTenant' });
+    const hookCard = page.locator('.record-card').filter({ hasText: 'HookTenant-'+RUN_ID });
     if (await hookCard.count() === 0) return;
 
     // Look through all HookTenant cards — HookTenant One should be active
@@ -166,7 +168,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
   test('H.4 Active agreement → employee status = active', async ({ page }) => {
     // Create an employee
     await page.goto('/employees/new');
-    await page.fill('input[name="first_name"]', 'HookEmployee');
+    await page.fill('input[name="first_name"]', 'HookEmployee-'+RUN_ID);
     await page.fill('input[name="last_name"]', 'One');
     await page.fill('input[name="phone"]', '+91 4444444401');
     await page.fill('input[name="role_title"]', 'Hook Staff');
@@ -176,7 +178,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     await page.fill('input[name="emergency_contact_name"]', 'Hook EC');
     await page.fill('input[name="emergency_contact_phone"]', '+91 4444444402');
     await page.selectOption('select[name="id_type"]', 'passport');
-    await page.fill('input[name="id_number"]', 'HOOKEID001');
+    await page.fill('input[name="id_number"]', 'HOOKEID001-'+RUN_ID);
     await page.locator('input[type="file"]').setInputFiles(TEST_IMAGE);
     await page.fill('input[name="bank_name"]', 'Hook Bank');
     await page.fill('input[name="bank_account"]', '1111111101');
@@ -202,7 +204,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
     // Employee should now be active
     await page.goto('/employees');
-    const empCard = page.locator('.record-card').filter({ hasText: 'HookEmployee One' });
+    const empCard = page.locator('.record-card').filter({ hasText: 'HookEmployee-'+RUN_ID+' One' });
     if (await empCard.count() > 0) {
       const badgeText = await empCard.first().locator('.badge').first().textContent();
       expect(badgeText?.trim()).toBe('active');
@@ -212,7 +214,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
   test('H.5 Expired agreement → employee status = inactive', async ({ page }) => {
     // Create another employee
     await page.goto('/employees/new');
-    await page.fill('input[name="first_name"]', 'HookEmployee');
+    await page.fill('input[name="first_name"]', 'HookEmployee-'+RUN_ID);
     await page.fill('input[name="last_name"]', 'Two');
     await page.fill('input[name="phone"]', '+91 4444444403');
     await page.fill('input[name="role_title"]', 'Hook Staff 2');
@@ -222,7 +224,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     await page.fill('input[name="emergency_contact_name"]', 'Hook2 EC');
     await page.fill('input[name="emergency_contact_phone"]', '+91 4444444404');
     await page.selectOption('select[name="id_type"]', 'passport');
-    await page.fill('input[name="id_number"]', 'HOOKEID002');
+    await page.fill('input[name="id_number"]', 'HOOKEID002-'+RUN_ID);
     await page.locator('input[type="file"]').setInputFiles(TEST_IMAGE);
     await page.fill('input[name="bank_name"]', 'Hook2 Bank');
     await page.fill('input[name="bank_account"]', '1111111102');
@@ -248,7 +250,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
     // Employee should be inactive (no active agreement)
     await page.goto('/employees');
-    const empCard = page.locator('.record-card').filter({ hasText: 'HookEmployee Two' });
+    const empCard = page.locator('.record-card').filter({ hasText: 'HookEmployee-'+RUN_ID+' Two' });
     if (await empCard.count() > 0) {
       const badgeText = await empCard.first().locator('.badge').first().textContent();
       expect(badgeText?.trim()).toBe('inactive');
