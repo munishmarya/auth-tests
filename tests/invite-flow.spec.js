@@ -74,7 +74,19 @@ test.describe('Invite Flow (Admin Context)', () => {
     expect(result).toBe('sent');
   });
 
-  test('1.3 Standalone invite dropdown excludes tenant, employee, vendor roles', async ({ page }) => {
+  test('1.3 Standalone invite blocks submission without role selection', async ({ page }) => {
+    await page.goto('/invites/new');
+
+    // Fill email but leave role at placeholder "Select role"
+    const emailInput = page.locator('input[type="email"]');
+    await emailInput.fill('test-no-role@example.com');
+
+    // Submit without selecting a role
+    await page.click('button[type="submit"]');
+    await expect(page.locator('text=Please select a role')).toBeVisible({ timeout: 5000 });
+  });
+
+  test('1.3b Standalone invite dropdown excludes tenant, employee, vendor roles', async ({ page }) => {
     await page.goto('/invites/new');
 
     // Wait for roles to load async before checking options
