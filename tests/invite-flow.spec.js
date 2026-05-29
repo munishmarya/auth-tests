@@ -161,8 +161,14 @@ test.describe('Invite Flow (Admin Context)', () => {
   test('1.7 Standalone form: no profile picker; admin can send landlord invite', async ({ page }) => {
     await page.goto('/invites/new');
 
-    // Standalone only shows Admin + Landlord — no profile picker for either
+    // Wait for roles to load async
     const roleSelect = page.locator('select').first();
+    await page.waitForFunction(
+      () => { const s = document.querySelector('select'); return s && s.options.length > 1; },
+      { timeout: 8000 }
+    ).catch(() => {});
+
+    // Standalone only shows Admin + Landlord — no profile picker for either
     const options = await roleSelect.locator('option').allTextContents();
     expect(options.some(o => o.toLowerCase().includes('landlord'))).toBe(true);
     expect(options.some(o => o.toLowerCase().includes('admin'))).toBe(true);
