@@ -7,7 +7,7 @@ test.describe('Vendor CRUD (Admin Context)', () => {
     await page.goto('/vendors/new');
     await page.fill('input[name="name"]', 'Test Vendor Co');
     await page.fill('input[name="phone"]', '+91 3333333301');
-    await page.fill('input[type="email"]', 'maryanaresh@gmail.com');
+    await page.fill('input[type="email"]', 'maryanaresh@gmail.com');  // email required for portal invites
     await page.fill('input[name="address"]', '123 Vendor Street');
     await page.selectOption('select[name="property"]', { index: 1 });
     await page.fill('textarea[name="notes"]', 'Plumbing vendor');

@@ -20,6 +20,8 @@ test.describe('Employees, Agreements, Tickets, & Transactions (Admin Context)', 
     // Select a property (required in v2)
     await page.selectOption('select[name="property"]', { index: 1 });
 
+    // Include email so portal invites can be sent later
+    await page.fill('input[type="email"]', 'rachelcmarya202212@gmail.com');
     await page.fill('input[name="first_name"]', 'Amit');
     await page.fill('input[name="last_name"]', 'Singh');
     await page.fill('input[name="phone"]', '+91 7777777777');
