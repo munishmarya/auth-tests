@@ -106,7 +106,11 @@ test.describe('Employees, Agreements, Tickets, & Transactions (Admin Context)', 
   });
 });
 
-test.describe('Ticket Tests (Tenant Context)', () => {
+// TODO: re-enable tests 8.1, 8.5, 9.6 once a real tenant/employee has been
+// invited via the portal (Invite to Application) and their session captured:
+//   node capture-auth.js tenant   (with a real tenant email)
+//   node capture-auth.js employee (with a real employee email)
+test.describe.skip('Ticket Tests (Tenant Context)', () => {
   test.use({ storageState: 'auth/tenantStorage.json' });
 
   test('8.1 Tenant creates a ticket (requires active lease)', async ({ page }) => {
@@ -149,7 +153,7 @@ test.describe('Ticket Tests (Tenant Context)', () => {
   });
 });
 
-test.describe('Role-Based Visibility (Employee Context)', () => {
+test.describe.skip('Role-Based Visibility (Employee Context)', () => {
   test.use({ storageState: 'auth/employeeStorage.json' });
 
   test('9.6 Employee sees only their own expense claims', async ({ page }) => {

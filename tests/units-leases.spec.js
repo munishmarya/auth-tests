@@ -115,7 +115,9 @@ test.describe('Units, Tenants, & Leases (Admin Context)', () => {
   });
 });
 
-test.describe('Lease Visibility (Tenant Context)', () => {
+// TODO: re-enable 5.5 once a real tenant has portal access and session is captured
+// See capture-auth.js for instructions
+test.describe.skip('Lease Visibility (Tenant Context)', () => {
   test.use({ storageState: 'auth/tenantStorage.json' });
 
   test('5.5 Tenant sees only their own lease', async ({ page }) => {

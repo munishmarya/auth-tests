@@ -3,13 +3,16 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
-const roles = ['admin', 'landlord', 'employee', 'tenant', 'vendor'];
+const roles = ['admin', 'landlord', 'tenant', 'employee', 'vendor'];
 const roleMap = {
-  admin: 'munish.marya@gmail.com',
+  admin:    'munish.marya@gmail.com',
   landlord: 'cs50mun.marya@gmail.com',
-  tenant: 'munishmaryaarchive1@gmail.com',
-  employee: 'rachelcmarya202212@gmail.com',
-  vendor: 'maryanaresh@gmail.com'
+  // tenant/employee/vendor: fill in the email once a real portal user exists
+  // (invite them via the profile page Invite to Application button, they sign in,
+  // then capture their session here)
+  tenant:   'REPLACE_WITH_REAL_TENANT_EMAIL',
+  employee: 'REPLACE_WITH_REAL_EMPLOYEE_EMAIL',
+  vendor:   'REPLACE_WITH_REAL_VENDOR_EMAIL',
 };
 
 const args = process.argv.slice(2);
