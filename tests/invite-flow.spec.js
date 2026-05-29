@@ -56,28 +56,28 @@ test.describe('Invite Flow (Admin Context)', () => {
     await expect(page.locator('text=Invite sent')).toBeVisible({ timeout: 8000 });
   });
 
-  test('1.3 Standalone vendor invite requires profile picker selection', async ({ page }) => {
+  test('1.3 Standalone invite dropdown only shows Admin and Landlord roles', async ({ page }) => {
     await page.goto('/invites/new');
     const roleSelect = page.locator('select').first();
-    await roleSelect.selectOption({ label: 'Vendor' });
+    const options = await roleSelect.locator('option').allTextContents();
 
-    // Profile picker should appear
-    await expect(page.locator('select').nth(1)).toBeVisible({ timeout: 3000 });
-
-    // Submit without selecting profile → error
-    await page.fill('input[type="email"]', 'test@example.com');
-    await page.click('button[type="submit"]');
-    await expect(page.locator('text=Please select an existing vendor profile')).toBeVisible({ timeout: 5000 });
+    // Standalone form should ONLY have admin + landlord — never tenant/employee/vendor
+    expect(options.some(o => o.toLowerCase().includes('admin'))).toBe(true);
+    expect(options.some(o => o.toLowerCase().includes('landlord'))).toBe(true);
+    expect(options.some(o => o.toLowerCase() === 'tenant')).toBe(false);
+    expect(options.some(o => o.toLowerCase() === 'employee')).toBe(false);
+    expect(options.some(o => o.toLowerCase() === 'vendor')).toBe(false);
   });
 
-  test('1.4 InvitesList loads for admin without errors', async ({ page }) => {
+  test('1.4 InvitesList shows invite cards for admin', async ({ page }) => {
     await page.goto('/invites');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
-    // Verify no error state — page should have loaded
     await expect(page.locator('text=Failed to load')).not.toBeVisible();
-    // Page should show either invite cards, empty message, or loading
-    // Note: InvitesList may show empty if auth-client build hasn't deployed the fix yet
-    // The key check is: no error shown
+    // Admin should see invite cards (at least the tenant invite sent in 1.1)
+    // or "No invites yet" — either is valid depending on test data state
+    const hasCards = await page.locator('.record-card').count() > 0;
+    const hasEmpty = await page.locator('.list-empty').count() > 0;
+    expect(hasCards || hasEmpty).toBe(true);
   });
 
   test('1.5 Admin can resend a pending invite', async ({ page }) => {
@@ -120,23 +120,25 @@ test.describe('Invite Flow (Admin Context)', () => {
     // If card still not found, pass gracefully (InvitesList fix may need deploy time)
   });
 
-  test('1.7 Tenant/employee/vendor standalone invite requires profile — profile picker shown', async ({ page }) => {
+  test('1.7 Standalone form: no profile picker; admin can send landlord invite', async ({ page }) => {
     await page.goto('/invites/new');
+
+    // Standalone only shows Admin + Landlord — no profile picker for either
     const roleSelect = page.locator('select').first();
+    const options = await roleSelect.locator('option').allTextContents();
+    expect(options.some(o => o.toLowerCase().includes('landlord'))).toBe(true);
+    expect(options.some(o => o.toLowerCase().includes('admin'))).toBe(true);
 
-    for (const roleLabel of ['Tenant', 'Employee', 'Vendor']) {
-      await roleSelect.selectOption({ label: roleLabel });
-      // Profile picker (second select) must appear
-      await expect(page.locator('select').nth(1)).toBeVisible({ timeout: 3000 });
-    }
-
-    // Landlord onboarding — NO profile picker
+    // Select Landlord — NO profile picker should appear (different from tenant/employee/vendor)
     await roleSelect.selectOption({ label: 'Landlord' });
-    // Only the role select + maybe property — no profile picker select
-    const selects = page.locator('select');
-    const count = await selects.count();
-    const hasProfilePicker = count >= 2 && await selects.nth(1).locator('option:has-text("— Select existing profile —")').count() > 0;
-    expect(hasProfilePicker).toBe(false);
+    const allSelects = page.locator('select');
+    const selectCount = await allSelects.count();
+    // Should have role select + maybe property select, but NO profile picker
+    for (let i = 1; i < selectCount; i++) {
+      const opts = await allSelects.nth(i).locator('option').allTextContents();
+      const isProfilePicker = opts.some(o => o.includes('Select existing profile') || o.includes('Choose existing'));
+      expect(isProfilePicker).toBe(false);
+    }
   });
 });
 
@@ -153,11 +155,18 @@ test.describe('Invite Flow (Landlord Context)', () => {
     await expect(page.locator('text=munish.marya@gmail.com')).not.toBeVisible({ timeout: 3000 });
   });
 
-  test('1.9 Landlord cannot send a landlord-role invite', async ({ page }) => {
+  test('1.9 Landlord visiting /invites/new sees guidance message, not a form', async ({ page }) => {
     await page.goto('/invites/new');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+
+    // InviteForm shows guidance for non-admin: "Invite to Application" profile page instruction
+    await expect(page.locator('text=Invite to Application')).toBeVisible({ timeout: 5000 });
+
+    // No role dropdown shown — the form is not rendered for landlords in standalone mode
     const roleSelect = page.locator('select').first();
-    const options = await roleSelect.locator('option').allTextContents();
-    const hasLandlord = options.some(o => o.toLowerCase() === 'landlord');
-    expect(hasLandlord).toBe(false);
+    await expect(roleSelect).not.toBeVisible({ timeout: 3000 });
+
+    // No submit button shown
+    await expect(page.locator('button[type="submit"]')).not.toBeVisible();
   });
 });
