@@ -67,7 +67,14 @@ test.describe('Invite Flow (Admin Context)', () => {
 
   test('1.3 Standalone invite dropdown excludes tenant, employee, vendor roles', async ({ page }) => {
     await page.goto('/invites/new');
+
+    // Wait for roles to load async before checking options
     const roleSelect = page.locator('select').first();
+    await page.waitForFunction(
+      () => { const s = document.querySelector('select'); return s && s.options.length > 1; },
+      { timeout: 8000 }
+    ).catch(() => {});
+
     const options = await roleSelect.locator('option').allTextContents();
 
     // Tenant/employee/vendor must NOT appear — they use profile page invites
@@ -75,16 +82,18 @@ test.describe('Invite Flow (Admin Context)', () => {
     expect(options.some(o => o.toLowerCase() === 'employee')).toBe(false);
     expect(options.some(o => o.toLowerCase() === 'vendor')).toBe(false);
 
-    // At least one role should be available (landlord always present)
+    // At least landlord should be present in the standalone form
     expect(options.some(o => o.toLowerCase().includes('landlord'))).toBe(true);
   });
 
   test('1.4 InvitesList shows invite cards for admin', async ({ page }) => {
     await page.goto('/invites');
-    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    // Wait for the list to finish loading (either cards or empty state appears)
+    await Promise.race([
+      page.locator('.record-card').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {}),
+      page.locator('.list-empty').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {}),
+    ]);
     await expect(page.locator('text=Failed to load')).not.toBeVisible();
-    // Admin should see invite cards (at least the tenant invite sent in 1.1)
-    // or "No invites yet" — either is valid depending on test data state
     const hasCards = await page.locator('.record-card').count() > 0;
     const hasEmpty = await page.locator('.list-empty').count() > 0;
     expect(hasCards || hasEmpty).toBe(true);
