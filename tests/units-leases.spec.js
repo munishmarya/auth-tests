@@ -2,9 +2,9 @@ const { test, expect } = require('@playwright/test');
 
 // Minimal 1x1 PNG for required file upload fields
 const TEST_IMAGE = {
-  name: 'test-doc.png',
+  name: 'test-attachment.png',
   mimeType: 'image/png',
-  buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'),
+  buffer: require('fs').readFileSync(require('path').join(__dirname, '../test-attachment.png')),
 };
 
 test.describe('Units, Tenants, & Leases (Admin Context)', () => {
@@ -113,11 +113,72 @@ test.describe('Units, Tenants, & Leases (Admin Context)', () => {
     await page.click('button[type="submit"]');
     await page.waitForURL('**/leases', { timeout: 10000 });
   });
+  test('3.6 Admin edits a unit (rent amount change)', async ({ page }) => {
+    await page.goto('/units');
+    const card = page.locator('.record-card-clickable').first();
+    if (await card.count() === 0) return;
+    await card.click();
+    const rentInput = page.locator('input[placeholder="15,000"]');
+    if (await rentInput.count() > 0) {
+      await rentInput.fill('16000');
+      await page.click('button[type="submit"]');
+      await expect(page.locator('text=Unit updated')).toBeVisible({ timeout: 8000 });
+    }
+  });
+
+  test('3.7 Remark saves and persists on tenant profile', async ({ page }) => {
+    await page.goto('/tenants');
+    const card = page.locator('.record-card-clickable').first();
+    if (await card.count() === 0) return;
+    await card.click();
+    // Add remark
+    await page.fill('textarea[name="remark"]', 'Automated remark test 12345');
+    await page.click('button[type="submit"]');
+    await expect(page.locator('text=Tenant updated')).toBeVisible({ timeout: 8000 });
+    // Re-open and verify remark persisted
+    await page.goto('/tenants');
+    await page.locator('.record-card-clickable').first().click();
+    const remarkVal = await page.locator('textarea[name="remark"]').inputValue();
+    expect(remarkVal).toContain('Automated remark test 12345');
+  });
+
+  test('3.8 File attachment saves and "View current document" appears on edit', async ({ page }) => {
+    await page.goto('/tenants');
+    const card = page.locator('.record-card-clickable').first();
+    if (await card.count() === 0) return;
+    await card.click();
+    // Upload the test attachment
+    await page.locator('input[type="file"]').setInputFiles(TEST_IMAGE);
+    await page.click('button[type="submit"]');
+    await expect(page.locator('text=Tenant updated')).toBeVisible({ timeout: 8000 });
+    // Re-open in edit mode and verify file link
+    await page.goto('/tenants');
+    await page.locator('.record-card-clickable').first().click();
+    const fileLink = page.locator('a.file-link');
+    await expect(fileLink).toBeVisible({ timeout: 5000 });
+    const href = await fileLink.getAttribute('href');
+    expect(href).toContain('/api/files/');
+  });
+
+  test('5.2 Signed contract attachment saves on lease', async ({ page }) => {
+    await page.goto('/leases');
+    const card = page.locator('.record-card-clickable').first();
+    if (await card.count() === 0) return;
+    await card.click();
+    // Upload contract
+    await page.locator('input[type="file"]').setInputFiles(TEST_IMAGE);
+    await page.fill('textarea[name="remark"]', 'Lease contract test remark');
+    await page.click('button[type="submit"]');
+    await expect(page.locator('text=Lease updated')).toBeVisible({ timeout: 8000 });
+    // Re-open and verify
+    await page.goto('/leases');
+    await page.locator('.record-card-clickable').first().click();
+    const fileLink = page.locator('a.file-link');
+    await expect(fileLink).toBeVisible({ timeout: 5000 });
+  });
 });
 
-// TODO: re-enable 5.5 once a real tenant has portal access and session is captured
-// See capture-auth.js for instructions
-test.describe.skip('Lease Visibility (Tenant Context)', () => {
+test.describe('Lease Visibility (Tenant Context)', () => {
   test.use({ storageState: 'auth/tenantStorage.json' });
 
   test('5.5 Tenant sees only their own lease', async ({ page }) => {

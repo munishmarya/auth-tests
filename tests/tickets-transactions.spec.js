@@ -2,9 +2,9 @@ const { test, expect } = require('@playwright/test');
 
 // Minimal 1x1 PNG for required file upload fields
 const TEST_IMAGE = {
-  name: 'test-doc.png',
+  name: 'test-attachment.png',
   mimeType: 'image/png',
-  buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'),
+  buffer: require('fs').readFileSync(require('path').join(__dirname, '../test-attachment.png')),
 };
 
 test.describe('Employees, Agreements, Tickets, & Transactions (Admin Context)', () => {
@@ -104,13 +104,76 @@ test.describe('Employees, Agreements, Tickets, & Transactions (Admin Context)', 
     await typeSelect.selectOption('rent_advice');
     await expect(page.locator('input[placeholder="0"]')).toBeVisible();
   });
+
+  test('6.5 Employee id_document attachment saves and remark persists', async ({ page }) => {
+    await page.goto('/employees');
+    const card = page.locator('.record-card-clickable').first();
+    if (await card.count() === 0) return;
+    await card.click();
+    // Add remark + upload file
+    await page.fill('textarea', 'Employee attachment test remark');
+    await page.locator('input[type="file"]').setInputFiles(TEST_IMAGE);
+    await page.click('button[type="submit"]');
+    await expect(page.locator('text=Employee updated')).toBeVisible({ timeout: 8000 });
+    // Re-open and verify file link + remark
+    await page.goto('/employees');
+    await page.locator('.record-card-clickable').first().click();
+    await expect(page.locator('a.file-link')).toBeVisible({ timeout: 5000 });
+    const href = await page.locator('a.file-link').getAttribute('href');
+    expect(href).toContain('/api/files/');
+    const remark = await page.locator('textarea').inputValue();
+    expect(remark).toContain('Employee attachment test remark');
+  });
+
+  test('6.6 Admin edits an employee (role_title change)', async ({ page }) => {
+    await page.goto('/employees');
+    const card = page.locator('.record-card-clickable').first();
+    if (await card.count() === 0) return;
+    await card.click();
+    await page.fill('input[name="role_title"]', 'Senior Maintenance');
+    await page.click('button[type="submit"]');
+    await expect(page.locator('text=Employee updated')).toBeVisible({ timeout: 8000 });
+  });
+
+  test('7.5 Agreement signed contract attachment saves', async ({ page }) => {
+    await page.goto('/agreements');
+    const card = page.locator('.record-card-clickable').first();
+    if (await card.count() === 0) return;
+    await card.click();
+    await page.locator('input[type="file"]').setInputFiles(TEST_IMAGE);
+    await page.fill('textarea', 'Agreement attachment test remark');
+    await page.click('button[type="submit"]');
+    await expect(page.locator('text=Agreement updated')).toBeVisible({ timeout: 8000 });
+    await page.goto('/agreements');
+    await page.locator('.record-card-clickable').first().click();
+    await expect(page.locator('a.file-link')).toBeVisible({ timeout: 5000 });
+  });
+
+  test('7.6 Admin edits an agreement (remark change)', async ({ page }) => {
+    await page.goto('/agreements');
+    const card = page.locator('.record-card-clickable').first();
+    if (await card.count() === 0) return;
+    await card.click();
+    await page.fill('textarea', 'Updated remark for agreement');
+    await page.click('button[type="submit"]');
+    await expect(page.locator('text=Agreement updated')).toBeVisible({ timeout: 8000 });
+  });
+
+  test('9.2 Admin edits a transaction (marks rent advice as paid)', async ({ page }) => {
+    await page.goto('/transactions');
+    const rentCard = page.locator('.record-card-clickable').filter({ hasText: 'rent_advice' }).first();
+    if (await rentCard.count() === 0) return;
+    await rentCard.click();
+    const statusSelect = page.locator('select[name="status"]');
+    if (await statusSelect.count() > 0) {
+      await statusSelect.selectOption('paid');
+      await page.click('button[type="submit"]');
+      await expect(page.locator('text=Transaction updated')).toBeVisible({ timeout: 8000 });
+    }
+  });
 });
 
-// TODO: re-enable tests 8.1, 8.5, 9.6 once a real tenant/employee has been
-// invited via the portal (Invite to Application) and their session captured:
-//   node capture-auth.js tenant   (with a real tenant email)
-//   node capture-auth.js employee (with a real employee email)
-test.describe.skip('Ticket Tests (Tenant Context)', () => {
+test.describe('Ticket Tests (Tenant Context)', () => {
   test.use({ storageState: 'auth/tenantStorage.json' });
 
   test('8.1 Tenant creates a ticket (requires active lease)', async ({ page }) => {
@@ -153,7 +216,7 @@ test.describe.skip('Ticket Tests (Tenant Context)', () => {
   });
 });
 
-test.describe.skip('Role-Based Visibility (Employee Context)', () => {
+test.describe('Role-Based Visibility (Employee Context)', () => {
   test.use({ storageState: 'auth/employeeStorage.json' });
 
   test('9.6 Employee sees only their own expense claims', async ({ page }) => {
