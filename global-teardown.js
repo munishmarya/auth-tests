@@ -80,11 +80,20 @@ DELETE FROM tickets WHERE
   OR title LIKE 'Tenant Ticket%'
   OR title LIKE 'Vendor Test%';
 
--- 9. Today's test transactions (type-based, date-limited to avoid touching old real data)
+-- 9. Transactions linked to test tenants/employees/vendors ONLY (never touches real user data)
 DELETE FROM transactions WHERE
-  type IN ('rent_advice','salary_advice','vendor_invoice','other_tenant_advice',
-           'payment_receipt','cash_payment','expense_claim')
-  AND date(created) = date('now');
+  tenant IN (
+    SELECT id FROM tenants WHERE first_name LIKE 'Hook%' OR first_name LIKE 'ASK%'
+      OR first_name IN ('DelTest','AutoAdvice','PortalTest')
+  )
+  OR employee IN (
+    SELECT id FROM employees WHERE first_name LIKE 'Hook%' OR first_name LIKE 'ASK%'
+      OR first_name IN ('DelTest','AutoAdvice')
+  )
+  OR vendor IN (
+    SELECT id FROM vendors WHERE name LIKE 'ASK%'
+      OR name IN ('DelTest Vendor','PortalVendor Test')
+  );
 `;
 
 function ssh(cmd, options = {}) {
