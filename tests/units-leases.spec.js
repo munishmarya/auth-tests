@@ -67,8 +67,7 @@ test.describe('Units, Tenants, & Leases (Admin Context)', () => {
     expect(idTypeOptions.some(opt => opt.toLowerCase().includes('national'))).toBe(true);
     expect(idTypeOptions.some(opt => opt.toLowerCase().includes('driver'))).toBe(true);
 
-    // Fill valid data — include email so portal invites can be sent later
-    await page.fill('input[type="email"]', 'munishmaryaarchive1@gmail.com');
+    // Email is set via Portal Access section in edit mode — not available on create
     await page.fill('input[name="first_name"]', 'Ravi');
     await page.fill('input[name="last_name"]', 'Kumar');
     await page.fill('input[name="phone"]', '+91 9876543210');

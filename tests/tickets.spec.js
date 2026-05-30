@@ -12,18 +12,21 @@ test.describe('Ticket Full Flow (Admin Context)', () => {
 
   test('T.1 Admin creates a ticket with photo attachment', async ({ page }) => {
     await page.goto('/tickets/new');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
 
     const propSelect = page.locator('select[name="property_id"], select[name="property"]').first();
     if (await propSelect.count() > 0) {
       await propSelect.selectOption({ index: 1 });
     }
 
-    // Select category if present
+    // Select category if present — wait for it to appear
     const catSelect = page.locator('select[name="category"]');
+    await catSelect.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
     if (await catSelect.count() > 0) {
       await catSelect.selectOption('in_house_maintenance');
     }
 
+    await page.locator('input[name="title"]').waitFor({ state: 'visible', timeout: 8000 });
     await page.fill('input[name="title"]', 'Leaking tap in bathroom');
 
     // Attach photo
@@ -82,7 +85,7 @@ test.describe('Ticket Full Flow (Admin Context)', () => {
 
   test('T.4 Admin can view tickets list', async ({ page }) => {
     await page.goto('/tickets');
-    await expect(page.locator('h1, text=Tickets').first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.list-container').first()).toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -134,7 +137,7 @@ test.describe('Ticket Access (Employee Context)', () => {
 
   test('T.8 Employee can view their tickets list', async ({ page }) => {
     await page.goto('/tickets');
-    await expect(page.locator('h1, text=Tickets').first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.list-container').first()).toBeVisible({ timeout: 5000 });
     // Employee sees tickets assigned to them or in their property
     const count = await page.locator('.record-card').count();
     expect(count).toBeGreaterThanOrEqual(0);
