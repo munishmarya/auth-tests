@@ -133,7 +133,33 @@ test.describe('Delete Operations (Admin only)', () => {
     await expect(page.locator('.record-card').filter({ hasText: 'DEL-U1' })).not.toBeVisible({ timeout: 3000 });
   });
 
-  test('DEL.5 Admin can delete a transaction', async ({ page }) => {
+  test('DEL.5 Admin can delete a property', async ({ page }) => {
+    // Create a disposable property
+    await page.goto('/properties/new');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    await page.fill('input[name="name"]', 'DEL-PROP Test');
+    await page.fill('input[name="address"]', '1 Delete Street');
+    await page.fill('input[name="city"]', 'Test City');
+    await page.waitForFunction(() => {
+      const s = document.querySelector('select[name="country"]');
+      return s && s.options.length > 1;
+    }, { timeout: 8000 });
+    await page.selectOption('select[name="country"]', { index: 1 });
+    await page.selectOption('select[name="status"]', 'active');
+    await page.click('button[type="submit"]');
+    await page.waitForURL('**/properties', { timeout: 10000 });
+
+    const card = page.locator('.record-card-clickable').filter({ hasText: 'DEL-PROP Test' }).first();
+    if (await card.count() === 0) return;
+    await card.click();
+
+    await expect(page.locator('button:has-text("Delete")')).toBeVisible({ timeout: 5000 });
+    await confirmDelete(page);
+    await page.waitForURL('**/properties', { timeout: 8000 });
+    await expect(page.locator('.record-card').filter({ hasText: 'DEL-PROP Test' })).not.toBeVisible({ timeout: 3000 });
+  });
+
+  test('DEL.6 Admin sees Delete button on a transaction (button visible)', async ({ page }) => {
     await page.goto('/transactions');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
 
@@ -145,7 +171,6 @@ test.describe('Delete Operations (Admin only)', () => {
     if (await deleteBtn.count() === 0) return; // some transactions may not be deletable
     await expect(deleteBtn).toBeVisible({ timeout: 5000 });
     // Note: don't actually delete to preserve test data for other tests
-    // Just verify button is visible
   });
 });
 
@@ -153,7 +178,7 @@ test.describe('Delete Operations (Admin only)', () => {
 test.describe('Delete — Landlord cannot delete', () => {
   test.use({ storageState: 'auth/landlordStorage.json' });
 
-  test('DEL.6 Landlord sees no Delete button on tenant profile', async ({ page }) => {
+  test('DEL.7 Landlord sees no Delete button on tenant profile', async ({ page }) => {
     await page.goto('/tenants');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
     const card = page.locator('.record-card-clickable').first();
@@ -163,7 +188,7 @@ test.describe('Delete — Landlord cannot delete', () => {
     await expect(page.locator('button:has-text("Delete")')).not.toBeVisible({ timeout: 3000 });
   });
 
-  test('DEL.7 Landlord sees no Delete button on employee profile', async ({ page }) => {
+  test('DEL.8 Landlord sees no Delete button on employee profile', async ({ page }) => {
     await page.goto('/employees');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
     const card = page.locator('.record-card-clickable').first();
@@ -172,7 +197,7 @@ test.describe('Delete — Landlord cannot delete', () => {
     await expect(page.locator('button:has-text("Delete")')).not.toBeVisible({ timeout: 3000 });
   });
 
-  test('DEL.8 Landlord sees no Delete button on vendor profile', async ({ page }) => {
+  test('DEL.9 Landlord sees no Delete button on vendor profile', async ({ page }) => {
     await page.goto('/vendors');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
     const card = page.locator('.record-card-clickable').first();
@@ -186,7 +211,7 @@ test.describe('Delete — Landlord cannot delete', () => {
 test.describe('Delete — Employee cannot delete', () => {
   test.use({ storageState: 'auth/employeeStorage.json' });
 
-  test('DEL.9 Employee sees no Delete button on their own record', async ({ page }) => {
+  test('DEL.10 Employee sees no Delete button on their own record', async ({ page }) => {
     await page.goto('/employees');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
     const card = page.locator('.record-card-clickable').first();
