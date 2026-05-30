@@ -98,10 +98,17 @@ function ssh(cmd, options = {}) {
 module.exports = async function globalTeardown() {
   console.log('\n🧹 Cleaning up test data after test suite...');
   try {
-    // Write SQL to a temp file on server and run it (avoids shell quoting issues)
-    const escaped = CLEANUP_SQL.replace(/"/g, '\\"').replace(/\n/g, ' ');
-    const result = ssh(`sqlite3 ${DB} "${escaped}" && sqlite3 ${DB} "SELECT 'tenants:',(SELECT COUNT(*) FROM tenants),' employees:',(SELECT COUNT(*) FROM employees),' units:',(SELECT COUNT(*) FROM units);"`);
-    console.log('  ✓ Cleanup complete —', result.trim());
+    // Pipe SQL via stdin to avoid shell quoting issues with parentheses
+    const fullSQL = CLEANUP_SQL + `
+SELECT 'tenants:' || (SELECT COUNT(*) FROM tenants) ||
+       ' employees:' || (SELECT COUNT(*) FROM employees) ||
+       ' units:' || (SELECT COUNT(*) FROM units);
+`;
+    const result = execSync(
+      `ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${SSH_HOST} "sqlite3 ${DB}"`,
+      { input: fullSQL, timeout: 60000, encoding: 'utf8' }
+    ).trim();
+    console.log('  ✓ Cleanup complete —', result.split('\n').pop());
   } catch (e) {
     console.warn('  ⚠ Cleanup failed:', e.message.split('\n')[0]);
   }
