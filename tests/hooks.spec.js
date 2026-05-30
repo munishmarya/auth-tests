@@ -172,6 +172,10 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     await page.fill('input[name="last_name"]', 'One');
     await page.fill('input[name="phone"]', '+91 4444444401');
     await page.fill('input[name="role_title"]', 'Hook Staff');
+    await page.waitForFunction(() => {
+      const s = document.querySelector('select[name="property"]');
+      return s && s.options.length > 1;
+    }, { timeout: 8000 });
     await page.selectOption('select[name="property"]', { index: 1 });
     await page.fill('input[name="current_address"]', 'Hook Emp Addr');
     await page.fill('input[name="permanent_address"]', 'Hook Emp Perm');
@@ -218,6 +222,10 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     await page.fill('input[name="last_name"]', 'Two');
     await page.fill('input[name="phone"]', '+91 4444444403');
     await page.fill('input[name="role_title"]', 'Hook Staff 2');
+    await page.waitForFunction(() => {
+      const s = document.querySelector('select[name="property"]');
+      return s && s.options.length > 1;
+    }, { timeout: 8000 });
     await page.selectOption('select[name="property"]', { index: 1 });
     await page.fill('input[name="current_address"]', 'Hook2 Emp Addr');
     await page.fill('input[name="permanent_address"]', 'Hook2 Emp Perm');
