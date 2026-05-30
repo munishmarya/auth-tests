@@ -26,10 +26,11 @@ test.describe('NeedsAttention — Admin', () => {
 
   test('NA.1 Notifications page loads without error', async ({ page }) => {
     await goToNotifications(page);
-    // Either shows sections OR "All clear" message
-    const hasSections = await page.locator('.notice-section').count() > 0;
-    const allClear    = await page.locator('text=All clear').isVisible().catch(() => false);
-    expect(hasSections || allClear).toBe(true);
+    // By the time NA tests run, hooks.spec.js + invite-flow.spec.js have created
+    // Hook* employees (no property) and pending invites — so sections MUST appear.
+    // If "All clear" shows instead, the page errored silently (e.g. one query killed all sections).
+    const sectionCount = await page.locator('.notice-section').count();
+    expect(sectionCount).toBeGreaterThan(0);
   });
 
   test('NA.2 Dashboard shows notification count badge when items exist', async ({ page }) => {
@@ -47,18 +48,14 @@ test.describe('NeedsAttention — Admin', () => {
 
   test('NA.3 Pending Invites section appears when invites exist', async ({ page }) => {
     await goToNotifications(page);
-    // Check if any pending invites exist in DB — section appears only when data exists
-    const shown = await sectionVisible(page, 'Pending Invites');
-    if (shown) {
-      await expect(page.locator('.notice-section-title', { hasText: 'Pending Invites' })).toBeVisible();
-      // Each item has a label and sub (expiry info)
-      const items = page.locator('.notice-section').filter({ hasText: 'Pending Invites' }).locator('.notice-item');
-      expect(await items.count()).toBeGreaterThan(0);
-      // Items are clickable and navigate to /invites
-      await items.first().click();
-      await expect(page).toHaveURL(/\/invites/, { timeout: 5000 });
-    }
-    // If no pending invites, section is absent — that's valid
+    // invite-flow.spec.js (1.1, 1.2) sends portal invites to HookTenant and HookEmployee
+    // — both remain pending at this point, so this section MUST be visible.
+    // A conditional check here would miss the bug where the whole page errors silently.
+    await expect(page.locator('.notice-section-title', { hasText: 'Pending Invites' })).toBeVisible({ timeout: 8000 });
+    const items = page.locator('.notice-section').filter({ hasText: 'Pending Invites' }).locator('.notice-item');
+    expect(await items.count()).toBeGreaterThan(0);
+    await items.first().click();
+    await expect(page).toHaveURL(/\/invites/, { timeout: 5000 });
   });
 
   test('NA.4 Open Tickets section appears when unassigned tickets exist', async ({ page }) => {
@@ -137,20 +134,16 @@ test.describe('NeedsAttention — Admin', () => {
 
   test('NA.11 Profiles Without a Property section (admin only)', async ({ page }) => {
     await goToNotifications(page);
-    // This section was added by our migration — shows profiles with no property assigned
-    // May or may not appear depending on current data state
-    const shown = await sectionVisible(page, 'Profiles Without a Property');
-    if (shown) {
-      await expect(page.locator('.notice-section-title', { hasText: 'Profiles Without a Property' })).toBeVisible();
-      const items = page.locator('.notice-section').filter({ hasText: 'Profiles Without a Property' }).locator('.notice-item');
-      expect(await items.count()).toBeGreaterThan(0);
-      // Items show profile type (Employee/Vendor/Tenant/Landlord)
-      const labelText = await items.first().locator('.notice-item-label').textContent();
-      expect(labelText).toMatch(/Employee|Vendor|Tenant|Landlord/);
-      // Items link to the profile
-      await items.first().click();
-      await expect(page).toHaveURL(/\/(employees|vendors|tenants|invites)/, { timeout: 5000 });
-    }
+    // hooks.spec.js creates HookEmployee1/HookEmployee2 with no property assigned,
+    // and HookTenant1/HookTenant2 with no active lease — so this section MUST appear.
+    // A conditional check here would miss silent errors that blank the whole page.
+    await expect(page.locator('.notice-section-title', { hasText: 'Profiles Without a Property' })).toBeVisible({ timeout: 8000 });
+    const items = page.locator('.notice-section').filter({ hasText: 'Profiles Without a Property' }).locator('.notice-item');
+    expect(await items.count()).toBeGreaterThan(0);
+    const labelText = await items.first().locator('.notice-item-label').textContent();
+    expect(labelText).toMatch(/Employee|Vendor|Tenant|Landlord/);
+    await items.first().click();
+    await expect(page).toHaveURL(/\/(employees|vendors|tenants|invites)/, { timeout: 5000 });
   });
 
   test('NA.12 All notification items are clickable and navigate correctly', async ({ page }) => {
