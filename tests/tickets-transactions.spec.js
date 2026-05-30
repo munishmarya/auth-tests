@@ -47,6 +47,7 @@ test.describe('Employees, Agreements, Tickets, & Transactions (Admin Context)', 
     // Only ONE active agreement per employee is allowed (unique index).
     // If Amit already has one, skip creation and just verify the list.
     await page.goto('/agreements');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
     const existingAmit = page.locator('.record-card').filter({ hasText: 'Amit' });
     if (await existingAmit.count() > 0) {
       // Agreement already exists — verify list loads correctly and move on
