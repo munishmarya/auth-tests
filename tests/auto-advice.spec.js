@@ -57,6 +57,21 @@ test.describe('Auto Advice — Rent Advice generated from lease', () => {
     await page.click('button[type="submit"]');
     await page.waitForURL('**/tenants', { timeout: 10000 });
 
+    // Check if an AutoAdvice lease already exists — skip creation if so (idempotent)
+    await page.goto('/leases');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    const existingLease = page.locator('.record-card').filter({ hasText: 'AutoAdvice' });
+    if (await existingLease.count() > 0) {
+      // Lease already exists from a previous run — just trigger and verify
+      const triggered = await triggerAutoAdvice(request);
+      if (triggered) {
+        await page.goto('/transactions');
+        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+        await expect(page.locator('.record-card').filter({ hasText: /Rent Advice/ }).first()).toBeVisible({ timeout: 5000 });
+      }
+      return;
+    }
+
     // Create a lease with due_day = today
     await page.goto('/leases/new');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
@@ -65,8 +80,10 @@ test.describe('Auto Advice — Rent Advice generated from lease', () => {
       return t && t.options.length > 1;
     }, { timeout: 8000 });
     const tenantOpts = await page.locator('select[name="tenant"] option').allTextContents();
-    const aaTenant = tenantOpts.find(o => o.includes('AutoAdvice'));
-    if (aaTenant) await page.selectOption('select[name="tenant"]', { label: aaTenant });
+    // Find the AutoAdvice tenant WITHOUT "(awaiting signup)" to avoid duplicates
+    const aaTenant = tenantOpts.find(o => o.includes('AutoAdvice') && !o.includes('awaiting'));
+    const aaTenantFallback = aaTenant || tenantOpts.find(o => o.includes('AutoAdvice'));
+    if (aaTenantFallback) await page.selectOption('select[name="tenant"]', { label: aaTenantFallback });
 
     await page.waitForFunction(() => {
       const u = document.querySelector('select[name="unit"]');
