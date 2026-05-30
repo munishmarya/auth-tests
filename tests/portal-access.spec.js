@@ -26,9 +26,14 @@ test.describe('Portal Access — Admin views profile portal states', () => {
     await page.goto('/tenants');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
 
-    // Find Ravi Kumar (has active portal user)
-    const raviCard = page.locator('.record-card-clickable').filter({ hasText: 'Ravi Kumar' }).first();
-    if (await raviCard.count() === 0) return; // Ravi not in DB
+    // Find Ravi Kumar with portal access (has "Portal" badge on list card)
+    // Filter specifically for the card that has the portal badge to avoid picking
+    // test-created Ravi cards which have no portal user
+    const raviCard = page.locator('.record-card-clickable')
+      .filter({ hasText: 'Ravi Kumar' })
+      .filter({ has: page.locator('.badge', { hasText: /Portal|portal/ }) })
+      .first();
+    if (await raviCard.count() === 0) return; // no Ravi with active portal
     await raviCard.click();
 
     await waitForPortal(page);
@@ -51,8 +56,12 @@ test.describe('Portal Access — Admin views profile portal states', () => {
     await page.goto('/employees');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
 
-    const amitCard = page.locator('.record-card-clickable').filter({ hasText: 'Amit Singh' }).first();
-    if (await amitCard.count() === 0) return;
+    // Find Amit Singh with portal access (has "Portal" badge on list card)
+    const amitCard = page.locator('.record-card-clickable')
+      .filter({ hasText: 'Amit Singh' })
+      .filter({ has: page.locator('.badge', { hasText: /Portal|portal/ }) })
+      .first();
+    if (await amitCard.count() === 0) return; // no Amit with active portal
     await amitCard.click();
 
     await waitForPortal(page);
