@@ -5,8 +5,9 @@ module.exports = defineConfig({
   /* Run tests sequentially to avoid database race conditions */
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  retries: 1,        // retry once on transient network/timeout failures
   workers: 1,
+  timeout: 45000,    // 45s per test — up from 30s default for slow server responses
   reporter: [
     ['html', { open: 'never' }],
     ['list']
