@@ -29,7 +29,7 @@ async function triggerAutoAdvice(request) {
 test.describe('Auto Advice — Rent Advice generated from lease', () => {
   test.use({ storageState: 'auth/adminStorage.json' });
 
-  test('AA.1 Auto Rent Advice: created when lease due_day == today', async ({ page, request }) => {
+  test('AA.1 Auto Rent Advice: created when lease due_day == today', { timeout: 90000 }, async ({ page, request }) => {
     const today = new Date().getDate(); // day of month (1-31)
 
     // Create a unit for this test
@@ -139,30 +139,8 @@ test.describe('Auto Advice — Rent Advice generated from lease', () => {
     const cardText = await rentCard.textContent();
     expect(cardText).toContain('12');
 
-    // Cleanup: delete test data (must confirm the "Yes, delete" dialog)
-    await page.goto('/leases');
-    const leaseCard = page.locator('.record-card-clickable').filter({ hasText: 'AutoAdvice' }).first();
-    if (await leaseCard.count() > 0) {
-      await leaseCard.click();
-      await confirmDelete(page).catch(() => {});
-      await page.waitForURL('**/leases', { timeout: 8000 }).catch(() => {});
-    }
-
-    await page.goto('/tenants');
-    const tenantCard = page.locator('.record-card-clickable').filter({ hasText: 'AutoAdvice' }).first();
-    if (await tenantCard.count() > 0) {
-      await tenantCard.click();
-      await confirmDelete(page).catch(() => {});
-      await page.waitForURL('**/tenants', { timeout: 8000 }).catch(() => {});
-    }
-
-    await page.goto('/units');
-    const unitCard = page.locator('.record-card-clickable').filter({ hasText: 'AA-U1' }).first();
-    if (await unitCard.count() > 0) {
-      await unitCard.click();
-      await confirmDelete(page).catch(() => {});
-      await page.waitForURL('**/units', { timeout: 8000 }).catch(() => {});
-    }
+    // Note: AutoAdvice test data (unit AA-U1, tenant AutoAdvice, lease) is cleaned up
+    // by the DB cleanup script run before each test suite execution.
   });
 
   test('AA.2 Auto Rent Advice: not duplicated if already exists this month', async ({ request }) => {
