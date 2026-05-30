@@ -81,6 +81,12 @@ test.describe('Scoping Setup — Admin creates data for second property', () => 
     await page.click('button[type="submit"]');
     await page.waitForURL('**/units', { timeout: 10000 });
 
+    // Check if ASKTenant already has a lease — skip creation if so
+    await page.goto('/leases');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    const askLeaseExists = await page.locator('.record-card').filter({ hasText: 'ASKTenant' }).count() > 0;
+    if (askLeaseExists) return;
+
     // Create lease linking ASK Tenant to ASK unit — sets last_property
     await page.goto('/leases/new');
     // Wait for tenant options to load from API before reading
