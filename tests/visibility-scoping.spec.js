@@ -83,13 +83,15 @@ test.describe('Scoping Setup — Admin creates data for second property', () => 
 
     // Create lease linking ASK Tenant to ASK unit — sets last_property
     await page.goto('/leases/new');
-    // selectOption with RegExp not supported in all Playwright versions — use string match
-    const tenantOpts = await page.locator('select[name="tenant"] option').allTextContents();
-    const askTenantOpt = tenantOpts.find(o => o.includes('ASKTenant'));
-    if (askTenantOpt) await page.locator('select[name="tenant"]').selectOption({ label: askTenantOpt });
-    const unitOpts = await page.locator('select[name="unit"] option').allTextContents();
-    const askUnitOpt = unitOpts.find(o => o.includes('ASK-U1'));
-    if (askUnitOpt) await page.locator('select[name="unit"]').selectOption({ label: askUnitOpt });
+    // Use index-based selection — label match fails when duplicates exist
+    const tenantSelect = page.locator('select[name="tenant"]');
+    const tenantOpts = await tenantSelect.locator('option').allTextContents();
+    const askTenantIdx = tenantOpts.findIndex(o => o.includes('ASKTenant'));
+    if (askTenantIdx > 0) await tenantSelect.selectOption({ index: askTenantIdx });
+    const unitSelect = page.locator('select[name="unit"]');
+    const unitOpts = await unitSelect.locator('option').allTextContents();
+    const askUnitIdx = unitOpts.findIndex(o => o.includes('ASK-U1'));
+    if (askUnitIdx > 0) await unitSelect.selectOption({ index: askUnitIdx });
     await page.fill('input[name="start_date"]', '2026-06-01');
     await page.fill('input[name="end_date"]', '2027-06-01');
     await page.fill('input[placeholder="15,000"]', '8000');

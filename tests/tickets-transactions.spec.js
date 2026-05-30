@@ -47,8 +47,15 @@ test.describe('Employees, Agreements, Tickets, & Transactions (Admin Context)', 
     await page.goto('/agreements');
     await page.click('button.new-btn');
 
-    // Fill details — employee field is name="employee" not "employee_id"
-    await page.selectOption('select[name="employee"]', { index: 1 });
+    // Select Amit Singh specifically — index-based fails when ASK data exists
+    const empOpts = await page.locator('select[name="employee"] option').allTextContents();
+    const amitOpt = empOpts.find(o => o.includes('Amit Singh') && !o.includes('awaiting'));
+    const fallbackOpt = amitOpt || empOpts.find(o => o.includes('Amit'));
+    if (fallbackOpt) {
+      await page.selectOption('select[name="employee"]', { label: fallbackOpt });
+    } else {
+      await page.selectOption('select[name="employee"]', { index: 1 });
+    }
     await page.fill('input[name="start_date"]', '2025-06-01');
     await page.fill('input[name="end_date"]', '2027-06-01');  // end_date required in v2
     // Salary and pay_day inputs have no name attr — use placeholder

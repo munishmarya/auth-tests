@@ -26,8 +26,10 @@ test.describe('Ticket Full Flow (Admin Context)', () => {
       await catSelect.selectOption('in_house_maintenance');
     }
 
-    await page.locator('input[name="title"]').waitFor({ state: 'visible', timeout: 8000 });
-    await page.fill('input[name="title"]', 'Leaking tap in bathroom');
+    // title input has no name attr — use placeholder selector
+    const titleInput = page.locator('input[name="title"], input[placeholder*="description"]').first();
+    await titleInput.waitFor({ state: 'visible', timeout: 8000 });
+    await titleInput.fill('Leaking tap in bathroom');
 
     // Attach photo
     const fileInput = page.locator('input[type="file"]');
@@ -35,7 +37,8 @@ test.describe('Ticket Full Flow (Admin Context)', () => {
       await fileInput.first().setInputFiles(TEST_IMAGE);
     }
 
-    await page.fill('textarea[name="description"]', 'The tap in unit 1A is leaking heavily');
+    const descArea = page.locator('textarea[name="description"], textarea').first();
+    await descArea.fill('The tap in unit 1A is leaking heavily');
     await page.click('button[type="submit"]');
     await page.waitForURL('**/tickets', { timeout: 10000 });
     await expect(page.locator('text=Leaking tap').first()).toBeVisible();
