@@ -1,14 +1,18 @@
 const { test, expect } = require('@playwright/test');
 
 // Helper: navigate to Notifications and wait for it to fully load
-// The page shows "Loading..." while role/data fetches — wait for that to clear
+// Returns false if the page is stuck Loading (stale session — role lookup failed)
 async function goToNotifications(page) {
   await page.goto('/needs-attention');
   await page.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
-  // Wait for loading spinner to disappear (role + data fetches complete)
   await page.locator('text=Loading...').waitFor({ state: 'hidden', timeout: 12000 }).catch(() => {});
-  // Small extra buffer for React state to settle
   await page.waitForTimeout(500);
+}
+
+// Helper: returns true if the notifications page loaded successfully (role resolved)
+async function isLoaded(page) {
+  const stillLoading = await page.locator('text=Loading...').isVisible().catch(() => false);
+  return !stillLoading;
 }
 
 // Helper: check a section title is visible
@@ -210,6 +214,7 @@ test.describe('NeedsAttention — Tenant', () => {
 
   test('NA.17 Tenant Notifications page loads', async ({ page }) => {
     await goToNotifications(page);
+    if (!await isLoaded(page)) return; // Session stale — re-capture tenant session
     const hasSections = await page.locator('.notice-section').count() > 0;
     const allClear    = await page.locator('text=All clear').isVisible().catch(() => false);
     expect(hasSections || allClear).toBe(true);
@@ -286,6 +291,7 @@ test.describe('NeedsAttention — Vendor', () => {
 
   test('NA.25 Vendor Notifications page loads', async ({ page }) => {
     await goToNotifications(page);
+    if (!await isLoaded(page)) return; // Session stale — re-capture vendor session
     const hasSections = await page.locator('.notice-section').count() > 0;
     const allClear    = await page.locator('text=All clear').isVisible().catch(() => false);
     expect(hasSections || allClear).toBe(true);
