@@ -1,5 +1,13 @@
 const { test, expect } = require('@playwright/test');
 
+// Helper: click Delete then confirm "Yes, delete" dialog
+async function confirmDelete(page) {
+  await page.locator('button:has-text("Delete")').click();
+  const yes = page.locator('button:has-text("Yes, delete")');
+  await yes.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+  if (await yes.count() > 0) await yes.click();
+}
+
 const TEST_IMAGE = {
   name: 'test-attachment.png',
   mimeType: 'image/png',
@@ -34,9 +42,8 @@ test.describe('Delete Operations (Admin only)', () => {
     await card.click();
 
     // Delete button should be visible for admin
-    const deleteBtn = page.locator('button:has-text("Delete")');
-    await expect(deleteBtn).toBeVisible({ timeout: 5000 });
-    await deleteBtn.click();
+    await expect(page.locator('button:has-text("Delete")')).toBeVisible({ timeout: 5000 });
+    await confirmDelete(page);
 
     // Confirm deletion navigates back to list
     await page.waitForURL('**/tenants', { timeout: 8000 });
@@ -73,9 +80,8 @@ test.describe('Delete Operations (Admin only)', () => {
     if (await card.count() === 0) return;
     await card.click();
 
-    const deleteBtn = page.locator('button:has-text("Delete")');
-    await expect(deleteBtn).toBeVisible({ timeout: 5000 });
-    await deleteBtn.click();
+    await expect(page.locator('button:has-text("Delete")')).toBeVisible({ timeout: 5000 });
+    await confirmDelete(page);
     await page.waitForURL('**/employees', { timeout: 8000 });
     await expect(page.locator('.record-card').filter({ hasText: 'DelTest Employee' })).not.toBeVisible({ timeout: 3000 });
   });
@@ -96,9 +102,8 @@ test.describe('Delete Operations (Admin only)', () => {
     if (await card.count() === 0) return;
     await card.click();
 
-    const deleteBtn = page.locator('button:has-text("Delete")');
-    await expect(deleteBtn).toBeVisible({ timeout: 5000 });
-    await deleteBtn.click();
+    await expect(page.locator('button:has-text("Delete")')).toBeVisible({ timeout: 5000 });
+    await confirmDelete(page);
     await page.waitForURL('**/vendors', { timeout: 8000 });
     await expect(page.locator('.record-card').filter({ hasText: 'DelTest Vendor' })).not.toBeVisible({ timeout: 3000 });
   });
@@ -122,9 +127,8 @@ test.describe('Delete Operations (Admin only)', () => {
     if (await card.count() === 0) return;
     await card.click();
 
-    const deleteBtn = page.locator('button:has-text("Delete")');
-    await expect(deleteBtn).toBeVisible({ timeout: 5000 });
-    await deleteBtn.click();
+    await expect(page.locator('button:has-text("Delete")')).toBeVisible({ timeout: 5000 });
+    await confirmDelete(page);
     await page.waitForURL('**/units', { timeout: 8000 });
     await expect(page.locator('.record-card').filter({ hasText: 'DEL-U1' })).not.toBeVisible({ timeout: 3000 });
   });

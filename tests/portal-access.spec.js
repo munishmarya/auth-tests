@@ -6,6 +6,14 @@ const { test, expect } = require('@playwright/test');
 // We create a fresh PortalTest profile for the revoke/re-invite cycle
 // so we don't break the real portal users.
 
+// Helper: click Delete then confirm "Yes, delete" dialog
+async function confirmDelete(page) {
+  await page.locator('button:has-text("Delete")').click();
+  const yes = page.locator('button:has-text("Yes, delete")');
+  await yes.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+  if (await yes.count() > 0) await yes.click();
+}
+
 // Helper: wait for PortalSection to finish loading (inviteLoading = false)
 async function waitForPortal(page) {
   await page.locator('.portal-section').waitFor({ state: 'visible', timeout: 10000 });
@@ -158,11 +166,10 @@ test.describe('Portal Access — Admin views profile portal states', () => {
       await expect(page.locator('.portal-section .badge-pending')).toBeVisible({ timeout: 8000 });
     }
 
-    // Cleanup: delete test profile
-    const deleteBtn = page.locator('button:has-text("Delete")');
-    if (await deleteBtn.count() > 0) {
-      await deleteBtn.click();
-      await page.waitForURL('**/tenants', { timeout: 8000 });
+    // Cleanup: delete test profile (confirm the dialog)
+    if (await page.locator('button:has-text("Delete")').count() > 0) {
+      await confirmDelete(page).catch(() => {});
+      await page.waitForURL('**/tenants', { timeout: 8000 }).catch(() => {});
     }
   });
 
@@ -206,10 +213,12 @@ test.describe('Portal Access — Admin views profile portal states', () => {
       await expect(inviteCard.first()).toBeVisible();
     }
 
-    // Cleanup
+    // Cleanup (confirm the delete dialog)
     await page.goto(editUrl);
-    await page.locator('button:has-text("Delete")').click().catch(() => {});
-    await page.waitForURL('**/vendors', { timeout: 8000 }).catch(() => {});
+    if (await page.locator('button:has-text("Delete")').count() > 0) {
+      await confirmDelete(page).catch(() => {});
+      await page.waitForURL('**/vendors', { timeout: 8000 }).catch(() => {});
+    }
   });
 
   test('PA.6 Resend invite works from profile page', async ({ page }) => {

@@ -1,5 +1,14 @@
 const { test, expect } = require('@playwright/test');
 
+// Helper: click Delete button then confirm the dialog
+async function confirmDelete(page) {
+  await page.locator('button:has-text("Delete")').click();
+  // Confirmation dialog appears — click "Yes, delete"
+  const confirmBtn = page.locator('button:has-text("Yes, delete")');
+  await confirmBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+  if (await confirmBtn.count() > 0) await confirmBtn.click();
+}
+
 // Helper: call the admin-only trigger endpoint
 async function triggerAutoAdvice(request) {
   const authStorage = require('../auth/adminStorage.json');
@@ -130,12 +139,12 @@ test.describe('Auto Advice — Rent Advice generated from lease', () => {
     const cardText = await rentCard.textContent();
     expect(cardText).toContain('12');
 
-    // Cleanup: delete test data (lease, tenant, unit will cascade via admin delete)
+    // Cleanup: delete test data (must confirm the "Yes, delete" dialog)
     await page.goto('/leases');
     const leaseCard = page.locator('.record-card-clickable').filter({ hasText: 'AutoAdvice' }).first();
     if (await leaseCard.count() > 0) {
       await leaseCard.click();
-      await page.locator('button:has-text("Delete")').click().catch(() => {});
+      await confirmDelete(page).catch(() => {});
       await page.waitForURL('**/leases', { timeout: 8000 }).catch(() => {});
     }
 
@@ -143,7 +152,7 @@ test.describe('Auto Advice — Rent Advice generated from lease', () => {
     const tenantCard = page.locator('.record-card-clickable').filter({ hasText: 'AutoAdvice' }).first();
     if (await tenantCard.count() > 0) {
       await tenantCard.click();
-      await page.locator('button:has-text("Delete")').click().catch(() => {});
+      await confirmDelete(page).catch(() => {});
       await page.waitForURL('**/tenants', { timeout: 8000 }).catch(() => {});
     }
 
@@ -151,7 +160,7 @@ test.describe('Auto Advice — Rent Advice generated from lease', () => {
     const unitCard = page.locator('.record-card-clickable').filter({ hasText: 'AA-U1' }).first();
     if (await unitCard.count() > 0) {
       await unitCard.click();
-      await page.locator('button:has-text("Delete")').click().catch(() => {});
+      await confirmDelete(page).catch(() => {});
       await page.waitForURL('**/units', { timeout: 8000 }).catch(() => {});
     }
   });
