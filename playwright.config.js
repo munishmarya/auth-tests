@@ -2,6 +2,8 @@ const { defineConfig, devices } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: './tests',
+  globalSetup:    './global-setup.js',     // backup DB before tests
+  globalTeardown: './global-teardown.js',  // clean test data after tests
   /* Run tests sequentially to avoid database race conditions */
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
