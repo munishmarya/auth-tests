@@ -83,12 +83,15 @@ test.describe('Scoping Setup — Admin creates data for second property', () => 
 
     // Create lease linking ASK Tenant to ASK unit — sets last_property
     await page.goto('/leases/new');
-    // Use index-based selection — label match fails when duplicates exist
+    // Wait for tenant options to load from API before reading
     const tenantSelect = page.locator('select[name="tenant"]');
+    await tenantSelect.locator('option[value!=""]').first().waitFor({ state: 'attached', timeout: 8000 });
     const tenantOpts = await tenantSelect.locator('option').allTextContents();
     const askTenantIdx = tenantOpts.findIndex(o => o.includes('ASKTenant'));
     if (askTenantIdx > 0) await tenantSelect.selectOption({ index: askTenantIdx });
+    // Wait for unit options to load
     const unitSelect = page.locator('select[name="unit"]');
+    await unitSelect.locator('option[value!=""]').first().waitFor({ state: 'attached', timeout: 8000 });
     const unitOpts = await unitSelect.locator('option').allTextContents();
     const askUnitIdx = unitOpts.findIndex(o => o.includes('ASK-U1'));
     if (askUnitIdx > 0) await unitSelect.selectOption({ index: askUnitIdx });

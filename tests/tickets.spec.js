@@ -19,11 +19,14 @@ test.describe('Ticket Full Flow (Admin Context)', () => {
       await propSelect.selectOption({ index: 1 });
     }
 
-    // Select category if present — wait for it to appear
+    // Select category by label (value may differ from display text)
     const catSelect = page.locator('select[name="category"]');
     await catSelect.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
     if (await catSelect.count() > 0) {
-      await catSelect.selectOption('in_house_maintenance');
+      const catOpts = await catSelect.locator('option').allTextContents();
+      const maintenance = catOpts.find(o => o.toLowerCase().includes('house') || o.toLowerCase().includes('maintenance'));
+      if (maintenance) await catSelect.selectOption({ label: maintenance });
+      else await catSelect.selectOption({ index: 1 });
     }
 
     // title input has no name attr — use placeholder selector
