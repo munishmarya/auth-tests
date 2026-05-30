@@ -26,13 +26,13 @@ test.describe('Units, Tenants, & Leases (Admin Context)', () => {
 
     // Fill form — property field is name="property", rent amount has no name attr
     await page.selectOption('select[name="property"]', { index: 1 });
-    await page.fill('input[name="unit_number"]', 'A-101');
+    await page.fill('input[name="unit_number"]', 'TEST-U101');
     await page.selectOption('select[name="type"]', 'apartment');
     await page.fill('input[placeholder="15,000"]', '15000');
 
     await page.click('button[type="submit"]');
     await page.waitForURL('**/units', { timeout: 10000 });
-    await expect(page.locator('text=A-101').first()).toBeVisible();
+    await expect(page.locator('text=TEST-U101').first()).toBeVisible();
   });
 
   test('3.5 Indian lakh formatting check', async ({ page }) => {
