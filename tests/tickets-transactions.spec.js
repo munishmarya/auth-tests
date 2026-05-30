@@ -58,7 +58,10 @@ test.describe('Employees, Agreements, Tickets, & Transactions (Admin Context)', 
 
     // Wait for employee options to load from API before reading
     const empSelect = page.locator('select[name="employee"]');
-    await empSelect.locator('option[value!=""]').first().waitFor({ state: 'attached', timeout: 8000 });
+    await page.waitForFunction(() => {
+      const s = document.querySelector('select[name="employee"]');
+      return s && s.options.length > 1;
+    }, { timeout: 8000 });
     const empOpts = await empSelect.locator('option').allTextContents();
     const amitOpt = empOpts.find(o => o.includes('Amit Singh') && !o.includes('awaiting'));
     const fallbackOpt = amitOpt || empOpts.find(o => o.includes('Amit'));

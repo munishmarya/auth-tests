@@ -93,8 +93,18 @@ test.describe('Units, Tenants, & Leases (Admin Context)', () => {
     await page.goto('/leases');
     await page.click('button.new-btn');
 
-    // Fill basic details — field names: tenant, unit (not tenant_id, unit_id)
-    await page.selectOption('select[name="tenant"]', { index: 1 });
+    // Wait for async options to load, then select Ravi Kumar specifically
+    await page.waitForFunction(() => {
+      const s = document.querySelector('select[name="tenant"]');
+      return s && s.options.length > 1;
+    }, { timeout: 8000 });
+    const tenantOpts = await page.locator('select[name="tenant"] option').allTextContents();
+    const raviOpt = tenantOpts.find(o => o.includes('Ravi') && !o.includes('awaiting'));
+    await page.selectOption('select[name="tenant"]', raviOpt ? { label: raviOpt } : { index: 1 });
+    await page.waitForFunction(() => {
+      const s = document.querySelector('select[name="unit"]');
+      return s && s.options.length > 1;
+    }, { timeout: 8000 });
     await page.selectOption('select[name="unit"]', { index: 1 });
     await page.fill('input[name="start_date"]', '2025-06-01');
     await page.fill('input[name="end_date"]', '2027-06-01');

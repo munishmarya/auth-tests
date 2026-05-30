@@ -14,24 +14,23 @@ test.describe('Ticket Full Flow (Admin Context)', () => {
     await page.goto('/tickets/new');
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
 
-    const propSelect = page.locator('select[name="property_id"], select[name="property"]').first();
-    if (await propSelect.count() > 0) {
-      await propSelect.selectOption({ index: 1 });
-    }
+    // Admin now gets a property selector — wait for it to load and select first property
+    const propSelect = page.locator('select[name="property"]');
+    await propSelect.waitFor({ state: 'visible', timeout: 8000 });
+    await page.waitForFunction(() => {
+      const s = document.querySelector('select[name="property"]');
+      return s && s.options.length > 1;
+    }, { timeout: 8000 });
+    await propSelect.selectOption({ index: 1 });
 
-    // Select category by label (value may differ from display text)
+    // Select category by value
     const catSelect = page.locator('select[name="category"]');
-    await catSelect.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
-    if (await catSelect.count() > 0) {
-      const catOpts = await catSelect.locator('option').allTextContents();
-      const maintenance = catOpts.find(o => o.toLowerCase().includes('house') || o.toLowerCase().includes('maintenance'));
-      if (maintenance) await catSelect.selectOption({ label: maintenance });
-      else await catSelect.selectOption({ index: 1 });
-    }
+    await catSelect.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+    await catSelect.selectOption('in_house_maintenance');
 
-    // title input has no name attr — use placeholder selector
-    const titleInput = page.locator('input[name="title"], input[placeholder*="description"]').first();
-    await titleInput.waitFor({ state: 'visible', timeout: 8000 });
+    // Title input uses placeholder, not name attr
+    const titleInput = page.locator('input[placeholder*="description"]').first();
+    await titleInput.waitFor({ state: 'visible', timeout: 5000 });
     await titleInput.fill('Leaking tap in bathroom');
 
     // Attach photo
