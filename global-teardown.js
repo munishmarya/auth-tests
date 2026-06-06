@@ -100,6 +100,15 @@ DELETE FROM transactions WHERE
     SELECT id FROM vendors WHERE name LIKE 'ASK%'
       OR name IN ('DelTest Vendor','PortalVendor Test')
   ));
+
+-- 10. Orphaned transactions — party_id references a deleted record (e.g. test tenant deleted above)
+-- Safe: only deletes where the referenced tenant/employee/vendor no longer exists
+DELETE FROM transactions
+  WHERE party_type = 'tenant'   AND party_id != '' AND party_id NOT IN (SELECT id FROM tenants);
+DELETE FROM transactions
+  WHERE party_type = 'employee' AND party_id != '' AND party_id NOT IN (SELECT id FROM employees);
+DELETE FROM transactions
+  WHERE party_type = 'vendor'   AND party_id != '' AND party_id NOT IN (SELECT id FROM vendors);
 `;
 
 function ssh(cmd, options = {}) {
