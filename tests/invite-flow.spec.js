@@ -186,6 +186,48 @@ test.describe('Invite Flow (Admin Context)', () => {
   });
 });
 
+// ── OTP: first-time invite regression ────────────────────────────────────────
+test.describe('OTP First-time Invite', () => {
+  test.use({ storageState: 'auth/adminStorage.json' })
+
+  test('1.10 First-time invited user can request OTP before any Google login', async ({ page }) => {
+    const BASE = 'https://testpmsmmarya.duckdns.org'
+    const email = `otp-firsttime-${Date.now()}@example.com`
+    const fs = require('fs')
+    const path = require('path')
+
+    const storage = JSON.parse(fs.readFileSync(path.join(__dirname, '../auth/adminStorage.json'), 'utf8'))
+    const pbAuth = JSON.parse(
+      storage.origins.find(o => o.origin.includes('testpmsmmarya'))
+        .localStorage.find(l => l.name === 'pocketbase_auth').value
+    ).token
+
+    // Create invite for a fresh email — no user account exists yet
+    const inviteRes = await page.request.post(`${BASE}/api/collections/invites/records`, {
+      headers: { 'Authorization': pbAuth },
+      data: { email, role: '877aqs2snglwr9r' }, // landlord role
+    })
+    expect(inviteRes.status()).toBe(200)
+
+    // Request OTP — before the fix this returned a dummy id and created no user
+    const otpRes = await page.request.post(`${BASE}/api/collections/users/request-otp`, {
+      data: { email },
+    })
+    expect(otpRes.status()).toBe(200)
+    const { otpId } = await otpRes.json()
+    expect(otpId).toBeTruthy()
+
+    // Key assertion: user must now exist — proves the hook ran and OTP was real
+    const userRes = await page.request.get(`${BASE}/api/collections/users/records`, {
+      headers: { 'Authorization': pbAuth },
+      params: { filter: `email="${email}"` },
+    })
+    expect(userRes.status()).toBe(200)
+    const { totalItems } = await userRes.json()
+    expect(totalItems).toBe(1)
+  })
+})
+
 // ── Landlord: invite visibility and restrictions ──────────────────────────────
 test.describe('Invite Flow (Landlord Context)', () => {
   test.use({ storageState: 'auth/landlordStorage.json' });
