@@ -48,7 +48,12 @@ DELETE FROM invites WHERE
   email LIKE 'portaltest%'
   OR email LIKE 'portalvendor%'
   OR email LIKE 'revoke-test%'
-  OR email LIKE 'test-no-role%';
+  OR email LIKE 'test-no-role%'
+  OR email LIKE 'otp-firsttime-%';
+
+-- 3b. Users created by OTP first-time invite test (and their OTP records)
+DELETE FROM _otps WHERE recordRef IN (SELECT id FROM users WHERE email LIKE 'otp-firsttime-%');
+DELETE FROM users WHERE email LIKE 'otp-firsttime-%';
 
 -- 4. Test employees (hook/ASK/DelTest/AutoAdvice only, NOT Amit with portal user)
 DELETE FROM employees WHERE
@@ -81,19 +86,20 @@ DELETE FROM tickets WHERE
   OR title LIKE 'Vendor Test%';
 
 -- 9. Transactions linked to test tenants/employees/vendors ONLY (never touches real user data)
+-- Uses party_id + party_type (actual schema columns — NOT tenant/employee/vendor)
 DELETE FROM transactions WHERE
-  tenant IN (
+  (party_type = 'tenant' AND party_id IN (
     SELECT id FROM tenants WHERE first_name LIKE 'Hook%' OR first_name LIKE 'ASK%'
       OR first_name IN ('DelTest','AutoAdvice','PortalTest')
-  )
-  OR employee IN (
+  ))
+  OR (party_type = 'employee' AND party_id IN (
     SELECT id FROM employees WHERE first_name LIKE 'Hook%' OR first_name LIKE 'ASK%'
       OR first_name IN ('DelTest','AutoAdvice')
-  )
-  OR vendor IN (
+  ))
+  OR (party_type = 'vendor' AND party_id IN (
     SELECT id FROM vendors WHERE name LIKE 'ASK%'
       OR name IN ('DelTest Vendor','PortalVendor Test')
-  );
+  ));
 `;
 
 function ssh(cmd, options = {}) {
