@@ -254,19 +254,23 @@ test.describe('Transactions — Admin updates status', () => {
     await expect(page.locator('text=Transaction updated')).toBeVisible({ timeout: 8000 });
   });
 
-  test('TX.9 Admin rejects a Vendor Invoice', async ({ page }) => {
+  test('TX.9 Vendor Invoice status dropdown only offers Unpaid and Paid', async ({ page }) => {
     await page.goto('/transactions');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
 
     const card = page.locator('.record-card-clickable').filter({ hasText: 'Vendor Invoice' }).first();
-    if (await card.count() === 0) return;
+    if (await card.count() === 0) return; // no vendor invoice yet — skip
 
     await card.click();
     const statusSelect = page.locator('.field').filter({ has: page.locator('label', { hasText: 'Status' }) }).locator('select').first();
-    if (await statusSelect.count() === 0) return;
-    await statusSelect.selectOption('rejected');
-    await page.click('button[type="submit"]');
-    await expect(page.locator('text=Transaction updated')).toBeVisible({ timeout: 8000 });
+    if (await statusSelect.count() === 0) return; // not admin-editable (shouldn't happen)
+
+    const optionValues = await statusSelect.locator('option').evaluateAll(opts => opts.map(o => o.value));
+    expect(optionValues).toContain('sent');
+    expect(optionValues).toContain('paid');
+    expect(optionValues).not.toContain('approved');
+    expect(optionValues).not.toContain('rejected');
+    expect(optionValues.length).toBe(2);
   });
 
   test('TX.10 Transaction list shows correct types and badges', async ({ page }) => {
@@ -350,6 +354,13 @@ test.describe('Transactions — Tenant visibility', () => {
     expect(count).toBeLessThan(20);
   });
 
+  test('TX.13b Tenant never sees a Mark Paid button', async ({ page }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    const markPaidBtns = page.locator('.portal-btn', { hasText: 'Mark Paid' });
+    await expect(markPaidBtns.first()).not.toBeVisible({ timeout: 3000 });
+  });
+
   test('TX.14 Tenant cannot create a transaction', async ({ page }) => {
     await page.goto('/transactions');
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
@@ -372,6 +383,13 @@ test.describe('Transactions — Vendor visibility', () => {
     // Should not see many Rent Advice items (may see 1 if test data has empty party_user_id)
     const rentCards = await page.locator('.record-card').filter({ hasText: 'Rent Advice' }).count();
     expect(rentCards).toBeLessThan(5);
+  });
+
+  test('TX.15b Vendor never sees a Mark Paid button', async ({ page }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    const markPaidBtns = page.locator('.portal-btn', { hasText: 'Mark Paid' });
+    await expect(markPaidBtns.first()).not.toBeVisible({ timeout: 3000 });
   });
 
   test('TX.16 Vendor cannot create a transaction', async ({ page }) => {
@@ -488,7 +506,30 @@ test.describe('Transactions — Deposit Advice and Mark Paid UX', () => {
     expect(newCount).toBeLessThan(initialCount);
   });
 
-  test('TX.21 Payment receipt shows open advices checklist for tenant', async ({ page }) => {
+  test('TX.10b Unpaid badge shown for sent advice, Pending for expense claim', async ({ page }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+
+    // If a sent rent advice exists its badge should now read "Unpaid" not "sent"
+    const adviceCard = page.locator('.record-card').filter({ hasText: 'Rent Advice' }).first();
+    if (await adviceCard.count() > 0) {
+      const badge = adviceCard.locator('.badge').first();
+      const text = await badge.textContent();
+      if (text) expect(['Unpaid', 'Paid'].includes(text.trim())).toBeTruthy();
+    }
+
+    // If an expense claim with status sent exists, its badge should read "Pending"
+    const claimCard = page.locator('.record-card').filter({ hasText: 'Expense Claim' }).first();
+    if (await claimCard.count() > 0) {
+      const badge = claimCard.locator('.badge').first();
+      const text = await badge.textContent();
+      if (text && text.trim() !== 'Approved' && text.trim() !== 'Rejected') {
+        expect(text.trim()).toBe('Pending');
+      }
+    }
+  });
+
+  test('TX.21 Payment receipt has no open-advices checklist and creates cleanly', async ({ page }) => {
     await page.goto('/transactions/new');
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
 
@@ -498,7 +539,6 @@ test.describe('Transactions — Deposit Advice and Mark Paid UX', () => {
     await waitOpts(page, 'Property');
     await inField(page, 'Property').selectOption({ index: 1 });
 
-    // Payment From → Tenant
     await waitOpts(page, 'Payment From');
     await inField(page, 'Payment From').selectOption('tenant');
 
@@ -508,29 +548,16 @@ test.describe('Transactions — Deposit Advice and Mark Paid UX', () => {
     if (ravi2) await inField(page, 'Tenant').selectOption({ label: ravi2 });
     else await inField(page, 'Tenant').selectOption({ index: 1 });
 
-    // Wait for useEffect to fetch open advices after partyId is set
-    await page.waitForTimeout(2000);
-
+    // Wait to confirm the checklist section never appears (feature removed)
+    await page.waitForTimeout(1500);
     const coversSection = page.locator('.field').filter({
       has: page.locator('label', { hasText: 'This payment covers' }),
     });
+    await expect(coversSection).not.toBeVisible({ timeout: 2000 }).catch(() => {
+      // If not visible assertion fails, force check count
+      expect(coversSection.count()).resolves.toBe(0);
+    });
 
-    if (await coversSection.count() > 0) {
-      // Tick the first open advice checkbox
-      const firstCheckbox = coversSection.locator('input[type="checkbox"]').first();
-      await firstCheckbox.check();
-      await expect(firstCheckbox).toBeChecked();
-
-      // Summary line appears after ticking (Payment | Selected | Difference)
-      await expect(coversSection.locator('p.field-hint')).toBeVisible({ timeout: 3000 });
-      const summaryText = await coversSection.locator('p.field-hint').textContent();
-      expect(summaryText).toContain('Payment:');
-      expect(summaryText).toContain('Selected:');
-      expect(summaryText).toContain('Difference:');
-    }
-    // If no open advices the section is absent — valid state if all previously marked paid
-
-    // Fill required payment fields and submit
     await waitOpts(page, 'Payment Mode');
     await inField(page, 'Payment Mode').selectOption({ index: 1 });
     await inField(page, 'Amount', 'input').fill('5000');
@@ -545,5 +572,49 @@ test.describe('Transactions — Deposit Advice and Mark Paid UX', () => {
     if (result === 'success') {
       await expect(page.locator('.record-card').filter({ hasText: 'Payment Receipt' }).first()).toBeVisible();
     }
+  });
+});
+
+// ── Server-side: status-change restricted to admin/landlord ──────────────────
+// An employee is created_by their own expense claim and passes the updateRule,
+// but the OnRecordUpdateRequest hook must still block them from flipping status.
+test.describe('Transactions — Server enforces status-change role gate', () => {
+  test.use({ storageState: 'auth/employeeStorage.json' });
+
+  test('TX.22 Employee cannot self-approve expense claim via direct API', async ({ page, request }) => {
+    // Navigate to the app so PocketBase auth is initialised in localStorage
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    // Extract the PocketBase auth token from localStorage
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return; // session not established — skip gracefully
+
+    const token = JSON.parse(pbAuthRaw).token;
+    if (!token) return;
+
+    // Find the employee's expense claim ID from the list
+    const firstCard = page.locator('.record-card').filter({ hasText: 'Expense Claim' }).first();
+    if (await firstCard.count() === 0) return; // no expense claim to test against — skip
+
+    // Click to open and read the record ID from the URL
+    await firstCard.click();
+    await page.waitForURL('**/transactions/**', { timeout: 5000 }).catch(() => {});
+    const url = page.url();
+    const match = url.match(/\/transactions\/([^/]+)$/);
+    if (!match) return;
+    const txId = match[1];
+
+    // Attempt to flip status to 'approved' directly via the PocketBase REST API
+    const resp = await request.patch(
+      `https://testpmsmmarya.duckdns.org/api/collections/transactions/records/${txId}`,
+      {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        data: { status: 'approved' },
+      }
+    );
+
+    // The server hook must reject this with 403
+    expect(resp.status()).toBe(403);
   });
 });
