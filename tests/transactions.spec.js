@@ -216,7 +216,7 @@ test.describe('Transactions — Admin creates all types', () => {
 test.describe('Transactions — Admin updates status', () => {
   test.use({ storageState: 'auth/adminStorage.json' });
 
-  test('TX.7 Admin marks a Rent Advice as Paid', async ({ page }) => {
+  test('TX.7 Rent Advice status is read-only on the edit form (use Mark Paid/Unpaid buttons instead)', async ({ page }) => {
     await page.goto('/transactions');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
 
@@ -224,19 +224,10 @@ test.describe('Transactions — Admin updates status', () => {
     if (await card.count() === 0) return; // no rent advice exists yet
 
     await card.click();
-    const statusSelect = page.locator('.field').filter({ has: page.locator('label', { hasText: 'Status' }) }).locator('select').first();
-    await statusSelect.selectOption('paid');
-    await page.click('button[type="submit"]');
-    await expect(page.locator('text=Transaction updated')).toBeVisible({ timeout: 8000 });
-
-    // Verify the update succeeded (success message appeared — enough confirmation)
-    // Badge class names vary by status; just verify the card still shows in list
-    await page.waitForURL('**/transactions', { timeout: 5000 }).catch(() => {});
-    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-    const updatedCard = page.locator('.record-card').filter({ hasText: 'Rent Advice' }).first();
-    if (await updatedCard.count() > 0) {
-      await expect(updatedCard.locator('.badge').first()).toBeVisible();
-    }
+    const statusField = page.locator('.field').filter({ has: page.locator('label', { hasText: 'Status' }) }).first();
+    const statusSelect = statusField.locator('select');
+    await expect(statusSelect).toHaveCount(0);
+    await expect(statusField.locator('input[readonly]')).toBeVisible();
   });
 
   test('TX.8 Admin approves an Expense Claim', async ({ page }) => {
@@ -254,7 +245,7 @@ test.describe('Transactions — Admin updates status', () => {
     await expect(page.locator('text=Transaction updated')).toBeVisible({ timeout: 8000 });
   });
 
-  test('TX.9 Vendor Invoice status dropdown only offers Unpaid and Paid', async ({ page }) => {
+  test('TX.9 Vendor Invoice status renders as read-only text, not a dropdown', async ({ page }) => {
     await page.goto('/transactions');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
 
@@ -262,15 +253,12 @@ test.describe('Transactions — Admin updates status', () => {
     if (await card.count() === 0) return; // no vendor invoice yet — skip
 
     await card.click();
-    const statusSelect = page.locator('.field').filter({ has: page.locator('label', { hasText: 'Status' }) }).locator('select').first();
-    if (await statusSelect.count() === 0) return; // not admin-editable (shouldn't happen)
-
-    const optionValues = await statusSelect.locator('option').evaluateAll(opts => opts.map(o => o.value));
-    expect(optionValues).toContain('sent');
-    expect(optionValues).toContain('paid');
-    expect(optionValues).not.toContain('approved');
-    expect(optionValues).not.toContain('rejected');
-    expect(optionValues.length).toBe(2);
+    const statusField = page.locator('.field').filter({ has: page.locator('label', { hasText: 'Status' }) }).first();
+    await expect(statusField.locator('select')).toHaveCount(0);
+    const statusInput = statusField.locator('input[readonly]');
+    await expect(statusInput).toBeVisible();
+    const value = await statusInput.inputValue();
+    expect(['sent', 'paid']).toContain(value);
   });
 
   test('TX.10 Transaction list shows correct types and badges', async ({ page }) => {
@@ -503,6 +491,31 @@ test.describe('Transactions — Deposit Advice and Mark Paid UX', () => {
 
     // One fewer "Mark Paid" button now (that card's status became 'paid')
     const newCount = await markPaidBtns.count();
+    expect(newCount).toBeLessThan(initialCount);
+  });
+
+  test('TX.20b Mark Unpaid inline button reverts status without page navigation', async ({ page }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+
+    const markUnpaidBtns = page.locator('.portal-btn', { hasText: 'Mark Unpaid' });
+    const initialCount = await markUnpaidBtns.count();
+    if (initialCount === 0) return; // no paid markable transactions — skip
+
+    await markUnpaidBtns.first().click();
+
+    // Confirm panel appears — click Confirm
+    const confirmBtn = page.locator('.pay-confirm').getByRole('button', { name: 'Confirm' });
+    await confirmBtn.click();
+
+    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+
+    // Still on /transactions — no navigation happened
+    expect(page.url()).toContain('/transactions');
+
+    // One fewer "Mark Unpaid" button now (that card's status became 'sent')
+    const newCount = await markUnpaidBtns.count();
     expect(newCount).toBeLessThan(initialCount);
   });
 
