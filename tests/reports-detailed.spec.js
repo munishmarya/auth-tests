@@ -21,12 +21,11 @@ test.describe('Income Statement (Admin)', () => {
     await page.goto('/income-statement');
     await page.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
 
-    await expect(page.locator('text=Accrual').first()).toBeVisible({ timeout: 8000 });
-    await expect(page.locator('text=Received').first()).toBeVisible();
-    await expect(page.locator('text=Open').first()).toBeVisible();
-    // Both MTD and YTD groups
-    const accrualCols = await page.locator('th:has-text("Accrual")').count();
-    expect(accrualCols).toBeGreaterThanOrEqual(2);
+    await expect(page.locator('th:has-text("MTD")').first()).toBeVisible({ timeout: 8000 });
+    await expect(page.locator('th:has-text("YTD")').first()).toBeVisible();
+    // Exactly one MTD column and one YTD column
+    expect(await page.locator('th:has-text("MTD")').count()).toBe(1);
+    expect(await page.locator('th:has-text("YTD")').count()).toBe(1);
   });
 
   test('RPT.3 Income Statement shows Rent Income from transactions', async ({ page }) => {

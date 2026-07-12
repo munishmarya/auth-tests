@@ -17,7 +17,7 @@ test.describe('Units, Tenants, & Leases (Admin Context)', () => {
     // 3.2 Verify type dropdown options
     const typeSelect = page.locator('select[name="type"]');
     const typeOptions = await typeSelect.locator('option').allTextContents();
-    for (const t of ['apartment', 'house', 'shop', 'office']) {
+    for (const t of ['apartment', 'house', 'shop', 'office', 'bed space']) {
       expect(typeOptions.some(opt => opt.toLowerCase().includes(t))).toBe(true);
     }
 
@@ -171,6 +171,24 @@ test.describe('Units, Tenants, & Leases (Admin Context)', () => {
     await expect(fileLink).toBeVisible({ timeout: 5000 });
     const href = await fileLink.getAttribute('href');
     expect(href).toContain('/api/files/');
+  });
+
+  test('3.9 Create a unit with type Bed Space and verify it saves and displays', async ({ page }) => {
+    await page.goto('/units');
+    await page.click('button.new-btn');
+
+    await page.selectOption('select[name="property"]', { index: 1 });
+    await page.fill('input[name="unit_number"]', 'TEST-BEDSPACE-1');
+    await page.selectOption('select[name="type"]', 'bed_space');
+    await page.fill('input[placeholder="15,000"]', '5000');
+
+    await page.click('button[type="submit"]');
+    await page.waitForURL('**/units', { timeout: 10000 });
+    await expect(page.locator('text=TEST-BEDSPACE-1').first()).toBeVisible();
+
+    // Re-open and confirm the saved type is "Bed Space", not lost/coerced
+    await page.locator('.record-card-clickable').filter({ hasText: 'TEST-BEDSPACE-1' }).first().click();
+    await expect(page.locator('select[name="type"]')).toHaveValue('bed_space');
   });
 
   test('5.2 Signed contract attachment saves on lease', async ({ page }) => {

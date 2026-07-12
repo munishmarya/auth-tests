@@ -270,6 +270,52 @@ test.describe('Transactions — Admin updates status', () => {
     const badges = await page.locator('.record-card .badge').count();
     expect(badges).toBeGreaterThan(0);
   });
+
+  test('TX.23 Filter bar narrows the list by transaction type', async ({ page }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    const filterBar = page.locator('.report-filters');
+    await expect(filterBar).toBeVisible({ timeout: 8000 });
+
+    const typeSelect = filterBar.locator('select').first();
+    await typeSelect.selectOption('rent_advice');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const cards = page.locator('.record-card');
+    const count = await cards.count();
+    if (count === 0) return; // no rent advice in this run — nothing to assert
+    const titles = await cards.locator('.card-title').allTextContents();
+    expect(titles.every(t => t === 'Rent Advice')).toBe(true);
+  });
+
+  test('TX.24 Selecting a transaction and clicking Back restores the same filter and list state', async ({ page }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    const filterBar = page.locator('.report-filters');
+    await expect(filterBar).toBeVisible({ timeout: 8000 });
+
+    const typeSelect = filterBar.locator('select').first();
+    await typeSelect.selectOption('rent_advice');
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const firstCard = page.locator('.record-card').first();
+    if (await firstCard.count() === 0) return; // no rent advice in this run — nothing to assert
+
+    await firstCard.click();
+    await page.waitForURL('**/transactions/**', { timeout: 8000 });
+
+    await page.click('.back-btn');
+    await page.waitForURL('**/transactions', { timeout: 8000 });
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+
+    // The type filter must still show "Rent Advice" selected, and the list still narrowed
+    await expect(page.locator('.report-filters select').first()).toHaveValue('rent_advice');
+    const titles = await page.locator('.record-card .card-title').allTextContents();
+    expect(titles.length).toBeGreaterThan(0);
+    expect(titles.every(t => t === 'Rent Advice')).toBe(true);
+  });
 });
 
 // ── Employee: expense claim flow ──────────────────────────────────────────────
@@ -355,6 +401,12 @@ test.describe('Transactions — Tenant visibility', () => {
     // Tenant has no "New" button for transactions
     const newBtn = page.locator('button.new-btn');
     await expect(newBtn).not.toBeVisible({ timeout: 3000 });
+  });
+
+  test('TX.25 Filter bar is hidden for tenant role', async ({ page }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    await expect(page.locator('.report-filters')).toHaveCount(0);
   });
 });
 
@@ -629,5 +681,60 @@ test.describe('Transactions — Server enforces status-change role gate', () => 
 
     // The server hook must reject this with 403
     expect(resp.status()).toBe(403);
+  });
+});
+
+// ── Server-side: dr/cr account and amount integrity ───────────────────────────
+// OnRecordCreateRequest("transactions") requires dr_account_id and cr_account_id
+// to be set and distinct, and amount to be > 0 (see auth-server commit b4b9fd8).
+test.describe('Transactions — Server enforces dr/cr integrity constraints', () => {
+  test.use({ storageState: 'auth/adminStorage.json' });
+
+  test('TX.26 Direct API rejects equal dr/cr accounts, missing accounts, and non-positive amount', async ({ page, request }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return; // session not established — skip gracefully
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    if (!token) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
+    const propId = (await propResp.json()).items?.[0]?.id;
+    if (!accId || !accId2 || !propId) return; // no reference data to test against — skip gracefully
+
+    const basePayload = {
+      type: 'cash_payment',
+      date: new Date().toISOString().slice(0, 10),
+      property_id: propId,
+      status: 'sent',
+      created_by: auth.model?.id,
+    };
+
+    const equalAccounts = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: { ...basePayload, amount: 100, dr_account_id: accId, cr_account_id: accId },
+    });
+    expect(equalAccounts.status()).toBe(400);
+
+    const zeroAmount = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: { ...basePayload, amount: 0, dr_account_id: accId, cr_account_id: accId2 },
+    });
+    expect(zeroAmount.status()).toBe(400);
+
+    const missingCr = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: { ...basePayload, amount: 100, dr_account_id: accId },
+    });
+    expect(missingCr.status()).toBe(400);
   });
 });

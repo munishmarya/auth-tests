@@ -172,6 +172,25 @@ test.describe('Landlord Visibility — test property only (cs50mun)', () => {
     const count = await page.locator('.record-card').count();
     expect(count).toBeLessThan(50); // sanity check
   });
+
+  // Regression guard for the property_landlords back-relation "?=" vs "="
+  // operator bug (auth-server commit 6435af5): the "=" operator silently
+  // returned 0 rows for every pl()/anyLL-gated collection, so a landlord saw
+  // an empty list everywhere rather than just missing the other landlord's
+  // data. Unlike S.1-S.8 (which only assert the *other* property's data is
+  // absent, and some skip entirely when the list is empty), these assertions
+  // require at least one of the landlord's *own* records to be visible, and
+  // never skip on a zero count — so a regression back to "=" fails loudly
+  // instead of passing by accident.
+  test('S.9 Landlord sees at least one of their own records in every scoped collection', async ({ page }) => {
+    const scopedPages = ['/properties', '/units', '/tenants', '/employees', '/vendors', '/leases', '/agreements', '/transactions'];
+    for (const path of scopedPages) {
+      await page.goto(path);
+      await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+      const count = await page.locator('.record-card').count();
+      expect(count, `expected at least one visible record-card on ${path}`).toBeGreaterThanOrEqual(1);
+    }
+  });
 });
 
 // ── Tenant scoping: sees only their own data ──────────────────────────────────
