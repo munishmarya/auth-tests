@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect, waitComboOptions } = require('./helpers/searchable-select');
 
 // Helper: click Delete then confirm "Yes, delete" dialog
 async function confirmDelete(page) {
@@ -59,11 +60,8 @@ test.describe('Delete Operations (Admin only)', () => {
     await page.fill('input[name="last_name"]', 'Employee');
     await page.fill('input[name="phone"]', '+91 9000000003');
     await page.fill('input[name="role_title"]', 'Test Role');
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="property"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="current_address"]', 'Del Emp Addr');
     await page.fill('input[name="permanent_address"]', 'Del Emp Perm');
     await page.fill('input[name="emergency_contact_name"]', 'Del Emp EC');
@@ -90,11 +88,8 @@ test.describe('Delete Operations (Admin only)', () => {
     await page.goto('/vendors/new');
     await page.fill('input[name="name"]', 'DelTest Vendor');
     await page.fill('input[name="phone"]', '+91 9000000005');
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="property"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
     await page.click('button[type="submit"]');
     await page.waitForURL('**/vendors', { timeout: 10000 });
 
@@ -112,11 +107,8 @@ test.describe('Delete Operations (Admin only)', () => {
     // Create a disposable unit
     await page.goto('/units/new');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="property"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="unit_number"]', 'DEL-U1');
     await page.selectOption('select[name="type"]', 'apartment');
     await page.fill('input[placeholder="15,000"]', '5000');

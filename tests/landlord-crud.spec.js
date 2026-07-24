@@ -1,22 +1,11 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect, comboOptionCount } = require('./helpers/searchable-select');
 
 const TEST_IMAGE = {
   name: 'test-attachment.png',
   mimeType: 'image/png',
   buffer: require('fs').readFileSync(require('path').join(__dirname, '../test-attachment.png')),
 };
-
-// Wait for a select to have loaded options (for async property/tenant/unit dropdowns)
-async function waitForSelectOptions(page, selector, minCount = 2, timeout = 10000) {
-  await page.waitForFunction(
-    ({ sel, min }) => {
-      const el = document.querySelector(sel);
-      return el && el.options.length >= min;
-    },
-    { sel: selector, min: minCount },
-    { timeout }
-  );
-}
 
 test.describe('Landlord CRUD + Scoping', () => {
   test.use({ storageState: 'auth/landlordStorage.json' });
@@ -38,12 +27,11 @@ test.describe('Landlord CRUD + Scoping', () => {
 
   test('L.2 Landlord creates a unit for their property', async ({ page }) => {
     await page.goto('/units/new');
-    // Wait for property dropdown to load options
-    await waitForSelectOptions(page, 'select[name="property"]').catch(() => {});
-    const propCount = await page.locator('select[name="property"] option').count();
-    if (propCount <= 1) { console.log('L.2 skip: no properties visible'); return; }
+    // Wait for property combobox to load options
+    const propCount = await comboOptionCount(page, 'property');
+    if (propCount < 1) { console.log('L.2 skip: no properties visible'); return; }
 
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="unit_number"]', 'LL-101');
     await page.selectOption('select[name="type"]', 'apartment');
     await page.fill('input[placeholder="15,000"]', '12000');
@@ -81,16 +69,14 @@ test.describe('Landlord CRUD + Scoping', () => {
 
   test('L.4 Landlord creates a lease linking their tenant and unit', async ({ page }) => {
     await page.goto('/leases/new');
-    // Wait for both selects to load
-    await waitForSelectOptions(page, 'select[name="tenant"]').catch(() => {});
-    const tenantCount = await page.locator('select[name="tenant"] option').count();
-    if (tenantCount <= 1) { console.log('L.4 skip: no tenants'); return; }
-    await page.selectOption('select[name="tenant"]', { index: 1 });
+    // Wait for both comboboxes to load
+    const tenantCount = await comboOptionCount(page, 'tenant');
+    if (tenantCount < 1) { console.log('L.4 skip: no tenants'); return; }
+    await comboSelect(page, 'tenant', { index: 0 });
 
-    await waitForSelectOptions(page, 'select[name="unit"]').catch(() => {});
-    const unitCount = await page.locator('select[name="unit"] option').count();
-    if (unitCount <= 1) { console.log('L.4 skip: no units'); return; }
-    await page.selectOption('select[name="unit"]', { index: 1 });
+    const unitCount = await comboOptionCount(page, 'unit');
+    if (unitCount < 1) { console.log('L.4 skip: no units'); return; }
+    await comboSelect(page, 'unit', { index: 0 });
 
     await page.fill('input[name="start_date"]', '2026-06-01');
     await page.fill('input[name="end_date"]', '2027-06-01');
@@ -104,16 +90,15 @@ test.describe('Landlord CRUD + Scoping', () => {
 
   test('L.5 Landlord creates an employee for their property', async ({ page }) => {
     await page.goto('/employees/new');
-    // Wait for property dropdown to load
-    await waitForSelectOptions(page, 'select[name="property"]').catch(() => {});
-    const propCount = await page.locator('select[name="property"] option').count();
-    if (propCount <= 1) { console.log('L.5 skip: no properties'); return; }
+    // Wait for property combobox to load
+    const propCount = await comboOptionCount(page, 'property');
+    if (propCount < 1) { console.log('L.5 skip: no properties'); return; }
 
     await page.fill('input[name="first_name"]', 'LandlordEmp');
     await page.fill('input[name="last_name"]', 'Test');
     await page.fill('input[name="phone"]', '+91 7777777701');
     await page.fill('input[name="role_title"]', 'Caretaker');
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="current_address"]', 'Staff Qtrs LL');
     await page.fill('input[name="permanent_address"]', 'Village LL');
     await page.fill('input[name="emergency_contact_name"]', 'LL Emp Emergency');
@@ -130,11 +115,10 @@ test.describe('Landlord CRUD + Scoping', () => {
 
   test('L.6 Landlord creates an employment agreement', async ({ page }) => {
     await page.goto('/agreements/new');
-    await waitForSelectOptions(page, 'select[name="employee"]').catch(() => {});
-    const empCount = await page.locator('select[name="employee"] option').count();
-    if (empCount <= 1) { console.log('L.6 skip: no employees'); return; }
+    const empCount = await comboOptionCount(page, 'employee');
+    if (empCount < 1) { console.log('L.6 skip: no employees'); return; }
 
-    await page.selectOption('select[name="employee"]', { index: 1 });
+    await comboSelect(page, 'employee', { index: 0 });
     await page.fill('input[name="start_date"]', '2026-06-01');
     await page.fill('input[name="end_date"]', '2027-06-01');
     await page.fill('input[placeholder="25,000"]', '15000');
@@ -148,14 +132,13 @@ test.describe('Landlord CRUD + Scoping', () => {
 
   test('L.7 Landlord creates a vendor for their property', async ({ page }) => {
     await page.goto('/vendors/new');
-    await waitForSelectOptions(page, 'select[name="property"]').catch(() => {});
-    const propCount = await page.locator('select[name="property"] option').count();
-    if (propCount <= 1) { console.log('L.7 skip: no properties'); return; }
+    const propCount = await comboOptionCount(page, 'property');
+    if (propCount < 1) { console.log('L.7 skip: no properties'); return; }
 
     await page.fill('input[name="name"]', 'Landlord Vendor');
     await page.fill('input[name="phone"]', '+91 6666666601');
     await page.fill('input[type="email"]', 'llvendor@example.com');
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await comboSelect(page, 'property', { index: 0 });
     await page.click('button[type="submit"]');
     await page.waitForURL('**/vendors', { timeout: 10000 });
     await expect(page.locator('text=Landlord Vendor').first()).toBeVisible();

@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect, comboOptionTexts, waitComboOptions } = require('./helpers/searchable-select');
 
 const TEST_IMAGE = {
   name: 'test-attachment.png',
@@ -17,14 +18,10 @@ test.describe('Scoping Setup — Admin creates data for second property', () => 
     await page.fill('input[name="phone"]', '+91 2222222201');
     await page.fill('input[name="role_title"]', 'ASK Staff');
     // Select "ASK apartment" property (second property by name)
-    const propSelect = page.locator('select[name="property"]');
-    const propOptions = await propSelect.locator('option').allTextContents();
+    await waitComboOptions(page, 'property');
+    const propOptions = await comboOptionTexts(page, 'property');
     const askIdx = propOptions.findIndex(o => o.includes('ASK'));
-    if (askIdx > 0) {
-      await propSelect.selectOption({ index: askIdx });
-    } else {
-      await propSelect.selectOption({ index: 1 }); // fallback
-    }
+    await comboSelect(page, 'property', { index: askIdx >= 0 ? askIdx : 0 }); // fallback
     await page.fill('input[name="current_address"]', 'ASK Address');
     await page.fill('input[name="permanent_address"]', 'ASK Perm');
     await page.fill('input[name="emergency_contact_name"]', 'ASK EC');
@@ -43,10 +40,10 @@ test.describe('Scoping Setup — Admin creates data for second property', () => 
     await page.goto('/vendors/new');
     await page.fill('input[name="name"]', 'ASK Vendor');
     await page.fill('input[name="phone"]', '+91 2222222203');
-    const propSelect = page.locator('select[name="property"]');
-    const propOptions = await propSelect.locator('option').allTextContents();
+    await waitComboOptions(page, 'property');
+    const propOptions = await comboOptionTexts(page, 'property');
     const askIdx = propOptions.findIndex(o => o.includes('ASK'));
-    await propSelect.selectOption({ index: askIdx > 0 ? askIdx : 1 });
+    await comboSelect(page, 'property', { index: askIdx >= 0 ? askIdx : 0 });
     await page.click('button[type="submit"]');
     await page.waitForURL('**/vendors', { timeout: 10000 });
     await expect(page.locator('text=ASK Vendor').first()).toBeVisible();
@@ -71,10 +68,10 @@ test.describe('Scoping Setup — Admin creates data for second property', () => 
 
     // Create a unit in ASK apartment
     await page.goto('/units/new');
-    const propSelect = page.locator('select[name="property"]');
-    const propOptions = await propSelect.locator('option').allTextContents();
+    await waitComboOptions(page, 'property');
+    const propOptions = await comboOptionTexts(page, 'property');
     const askIdx = propOptions.findIndex(o => o.includes('ASK'));
-    await propSelect.selectOption({ index: askIdx > 0 ? askIdx : 1 });
+    await comboSelect(page, 'property', { index: askIdx >= 0 ? askIdx : 0 });
     await page.fill('input[name="unit_number"]', 'ASK-U1');
     await page.selectOption('select[name="type"]', 'apartment');
     await page.fill('input[placeholder="15,000"]', '8000');
@@ -90,23 +87,15 @@ test.describe('Scoping Setup — Admin creates data for second property', () => 
     // Create lease linking ASK Tenant to ASK unit — sets last_property
     await page.goto('/leases/new');
     // Wait for tenant options to load from API before reading
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="tenant"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    const tenantSelect = page.locator('select[name="tenant"]');
-    const tenantOpts = await tenantSelect.locator('option').allTextContents();
+    await waitComboOptions(page, 'tenant');
+    const tenantOpts = await comboOptionTexts(page, 'tenant');
     const askTenantIdx = tenantOpts.findIndex(o => o.includes('ASKTenant'));
-    if (askTenantIdx > 0) await tenantSelect.selectOption({ index: askTenantIdx });
+    if (askTenantIdx >= 0) await comboSelect(page, 'tenant', { index: askTenantIdx });
     // Wait for unit options to load
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="unit"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    const unitSelect = page.locator('select[name="unit"]');
-    const unitOpts = await unitSelect.locator('option').allTextContents();
+    await waitComboOptions(page, 'unit');
+    const unitOpts = await comboOptionTexts(page, 'unit');
     const askUnitIdx = unitOpts.findIndex(o => o.includes('ASK-U1'));
-    if (askUnitIdx > 0) await unitSelect.selectOption({ index: askUnitIdx });
+    if (askUnitIdx >= 0) await comboSelect(page, 'unit', { index: askUnitIdx });
     await page.fill('input[name="start_date"]', '2026-06-01');
     await page.fill('input[name="end_date"]', '2027-06-01');
     await page.fill('input[placeholder="15,000"]', '8000');

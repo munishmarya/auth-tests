@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect, waitComboOptions } = require('./helpers/searchable-select');
 
 // ── Portal Access: PortalSection badge states ─────────────────────────────────
 // Tests the full invite lifecycle on profile pages without needing real email acceptance.
@@ -178,11 +179,8 @@ test.describe('Portal Access — Admin views profile portal states', () => {
     await page.goto('/vendors/new');
     await page.fill('input[name="name"]', 'PortalVendor Test');
     await page.fill('input[name="phone"]', '+91 8800000003');
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="property"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
     await page.click('button[type="submit"]');
     await page.waitForURL('**/vendors', { timeout: 10000 });
 

@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect, comboOptionTexts, waitComboOptions } = require('./helpers/searchable-select');
 
 // Minimal 1x1 PNG for required file upload fields
 const TEST_IMAGE = {
@@ -18,7 +19,8 @@ test.describe('Employees, Agreements, Tickets, & Transactions (Admin Context)', 
     await expect(page.locator('.badge')).toBeVisible();
 
     // Select a property (required in v2)
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
 
     // Email is set via Portal Access section in edit mode — not available on create
     await page.fill('input[name="first_name"]', 'Amit');
@@ -58,16 +60,12 @@ test.describe('Employees, Agreements, Tickets, & Transactions (Admin Context)', 
     await page.click('button.new-btn');
 
     // Wait for employee options to load from API before reading
-    const empSelect = page.locator('select[name="employee"]');
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="employee"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    const empOpts = await empSelect.locator('option').allTextContents();
+    await waitComboOptions(page, 'employee');
+    const empOpts = await comboOptionTexts(page, 'employee');
     const amitOpt = empOpts.find(o => o.includes('Amit Singh') && !o.includes('awaiting'));
     const fallbackOpt = amitOpt || empOpts.find(o => o.includes('Amit'));
-    if (fallbackOpt) await empSelect.selectOption({ label: fallbackOpt });
-    else await empSelect.selectOption({ index: 1 });
+    if (fallbackOpt) await comboSelect(page, 'employee', fallbackOpt);
+    else await comboSelect(page, 'employee', { index: 0 });
 
     await page.fill('input[name="start_date"]', '2025-06-01');
     await page.fill('input[name="end_date"]', '2027-06-01');

@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect } = require('./helpers/searchable-select');
 
 test.describe('Vendor CRUD (Admin Context)', () => {
   test.use({ storageState: 'auth/adminStorage.json' });
@@ -9,7 +10,7 @@ test.describe('Vendor CRUD (Admin Context)', () => {
     await page.fill('input[name="phone"]', '+91 3333333301');
     // Email is in Portal Access section (edit mode only) — not on create form
     await page.fill('input[name="address"]', '123 Vendor Street');
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('textarea[name="notes"]', 'Plumbing vendor');
     await page.click('button[type="submit"]');
     await page.waitForURL('**/vendors', { timeout: 10000 });

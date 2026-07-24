@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect, comboRoot, comboOptionCount, waitComboOptions } = require('./helpers/searchable-select');
 
 const TEST_IMAGE = {
   name: 'test-attachment.png',
@@ -15,13 +16,9 @@ test.describe('Ticket Full Flow (Admin Context)', () => {
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
 
     // Admin now gets a property selector — wait for it to load and select first property
-    const propSelect = page.locator('select[name="property"]');
-    await propSelect.waitFor({ state: 'visible', timeout: 8000 });
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="property"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    await propSelect.selectOption({ index: 1 });
+    await comboRoot(page, 'property').waitFor({ state: 'visible', timeout: 8000 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
 
     // Select category by value
     const catSelect = page.locator('select[name="category"]');
@@ -52,11 +49,11 @@ test.describe('Ticket Full Flow (Admin Context)', () => {
     if (await openCard.count() === 0) return;
     await openCard.click();
 
-    const assignedTo = page.locator('select[name="assigned_to"]');
+    const assignedTo = comboRoot(page, 'assigned_to');
     if (await assignedTo.count() > 0) {
-      const empOptions = await assignedTo.locator('option').count();
-      if (empOptions > 1) {
-        await assignedTo.selectOption({ index: 1 });
+      const empOptions = await comboOptionCount(page, 'assigned_to');
+      if (empOptions >= 1) {
+        await comboSelect(page, 'assigned_to', { index: 0 });
         await page.click('button[type="submit"]');
         await page.waitForURL('**/tickets', { timeout: 10000 });
       }
@@ -132,7 +129,7 @@ test.describe('Ticket Access (Tenant Context)', () => {
     if (await newBtn.count() === 0) return;
     await newBtn.click();
     // assigned_to field should not be available to tenants
-    await expect(page.locator('select[name="assigned_to"]')).not.toBeVisible();
+    await expect(comboRoot(page, 'assigned_to')).not.toBeVisible();
   });
 });
 

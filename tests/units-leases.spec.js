@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect, waitComboOptions, comboOptionTexts } = require('./helpers/searchable-select');
 
 // Minimal 1x1 PNG for required file upload fields
 const TEST_IMAGE = {
@@ -25,7 +26,7 @@ test.describe('Units, Tenants, & Leases (Admin Context)', () => {
     await expect(page.locator('.badge')).toBeVisible();
 
     // Fill form — property field is name="property", rent amount has no name attr
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="unit_number"]', 'TEST-U101');
     await page.selectOption('select[name="type"]', 'apartment');
     await page.fill('input[placeholder="15,000"]', '15000');
@@ -39,7 +40,7 @@ test.describe('Units, Tenants, & Leases (Admin Context)', () => {
     await page.goto('/units');
     await page.click('button.new-btn');
 
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="unit_number"]', 'Lakh-Unit');
     await page.selectOption('select[name="type"]', 'apartment');
     await page.fill('input[placeholder="15,000"]', '150000');
@@ -97,18 +98,12 @@ test.describe('Units, Tenants, & Leases (Admin Context)', () => {
     await page.click('button.new-btn');
 
     // Wait for async options to load, then select Ravi Kumar specifically
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="tenant"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    const tenantOpts = await page.locator('select[name="tenant"] option').allTextContents();
+    await waitComboOptions(page, 'tenant');
+    const tenantOpts = await comboOptionTexts(page, 'tenant');
     const raviOpt = tenantOpts.find(o => o.includes('Ravi') && !o.includes('awaiting'));
-    await page.selectOption('select[name="tenant"]', raviOpt ? { label: raviOpt } : { index: 1 });
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="unit"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    await page.selectOption('select[name="unit"]', { index: 1 });
+    await comboSelect(page, 'tenant', raviOpt || { index: 0 });
+    await waitComboOptions(page, 'unit');
+    await comboSelect(page, 'unit', { index: 0 });
     await page.fill('input[name="start_date"]', '2025-06-01');
     await page.fill('input[name="end_date"]', '2027-06-01');
     // Rent and deposit inputs have no name attr — use placeholder
@@ -177,7 +172,7 @@ test.describe('Units, Tenants, & Leases (Admin Context)', () => {
     await page.goto('/units');
     await page.click('button.new-btn');
 
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="unit_number"]', 'TEST-BEDSPACE-1');
     await page.selectOption('select[name="type"]', 'bed_space');
     await page.fill('input[placeholder="15,000"]', '5000');

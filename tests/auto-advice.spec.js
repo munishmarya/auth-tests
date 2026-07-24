@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect, comboOptionTexts, waitComboOptions } = require('./helpers/searchable-select');
 
 // Helper: click Delete button then confirm the dialog
 async function confirmDelete(page) {
@@ -35,11 +36,8 @@ test.describe('Auto Advice — Rent Advice generated from lease', () => {
     // Create a unit for this test
     await page.goto('/units/new');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="property"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="unit_number"]', 'AA-U1');
     await page.selectOption('select[name="type"]', 'apartment');
     await page.fill('input[placeholder="15,000"]', '12000');
@@ -84,23 +82,17 @@ test.describe('Auto Advice — Rent Advice generated from lease', () => {
     // Create a lease with due_day = today
     await page.goto('/leases/new');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
-    await page.waitForFunction(() => {
-      const t = document.querySelector('select[name="tenant"]');
-      return t && t.options.length > 1;
-    }, { timeout: 8000 });
-    const tenantOpts = await page.locator('select[name="tenant"] option').allTextContents();
+    await waitComboOptions(page, 'tenant');
+    const tenantOpts = await comboOptionTexts(page, 'tenant');
     // Find the AutoAdvice tenant WITHOUT "(awaiting signup)" to avoid duplicates
     const aaTenant = tenantOpts.find(o => o.includes('AutoAdvice') && !o.includes('awaiting'));
     const aaTenantFallback = aaTenant || tenantOpts.find(o => o.includes('AutoAdvice'));
-    if (aaTenantFallback) await page.selectOption('select[name="tenant"]', { label: aaTenantFallback });
+    if (aaTenantFallback) await comboSelect(page, 'tenant', aaTenantFallback);
 
-    await page.waitForFunction(() => {
-      const u = document.querySelector('select[name="unit"]');
-      return u && u.options.length > 1;
-    }, { timeout: 8000 });
-    const unitOpts = await page.locator('select[name="unit"] option').allTextContents();
+    await waitComboOptions(page, 'unit');
+    const unitOpts = await comboOptionTexts(page, 'unit');
     const aaUnit = unitOpts.find(o => o.includes('AA-U1'));
-    if (aaUnit) await page.selectOption('select[name="unit"]', { label: aaUnit });
+    if (aaUnit) await comboSelect(page, 'unit', aaUnit);
 
     const startYear = new Date().getFullYear();
     await page.fill('input[name="start_date"]', `${startYear}-01-01`);

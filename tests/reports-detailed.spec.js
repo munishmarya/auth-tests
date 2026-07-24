@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect, comboOptionCount } = require('./helpers/searchable-select');
 
 // ── Income Statement — Admin ──────────────────────────────────────────────────
 test.describe('Income Statement (Admin)', () => {
@@ -133,11 +134,10 @@ test.describe('Balance Sheet (Admin)', () => {
     await page.goto('/balance-sheet');
     await page.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
 
-    const propSelect = page.locator('.report-filters select').first();
-    const options = await propSelect.locator('option').allTextContents();
-    if (options.length > 1) {
+    const count = await comboOptionCount(page, 'property_filter');
+    if (count >= 1) {
       // Select first property
-      await propSelect.selectOption({ index: 1 });
+      await comboSelect(page, 'property_filter', { index: 0 });
       await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
       await expect(page.locator('text=Total Assets')).toBeVisible({ timeout: 8000 });
     }

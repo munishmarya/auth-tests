@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect, comboOptionCount, comboOptionTexts, waitComboOptions } = require('./helpers/searchable-select');
 
 const TEST_IMAGE = {
   name: 'test-attachment.png',
@@ -24,7 +25,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
   test('H.1 Active lease → unit becomes occupied', async ({ page }) => {
     // Create unit
     await page.goto('/units/new');
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="unit_number"]', 'HOOK-U1-'+RUN_ID);
     await page.selectOption('select[name="type"]', 'apartment');
     await page.fill('input[placeholder="15,000"]', '10000');
@@ -50,18 +51,16 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
     // Create active lease using index selectors (more reliable)
     await page.goto('/leases/new');
-    const tenantSelect = page.locator('select[name="tenant"]');
-    const tenantCount = await tenantSelect.locator('option').count();
-    if (tenantCount <= 1) return; // no tenants
+    const tenantCount = await comboOptionCount(page, 'tenant');
+    if (tenantCount < 1) return; // no tenants
     // Select last tenant (most recently created = HookTenant One)
-    await tenantSelect.selectOption({ index: tenantCount - 1 });
+    await comboSelect(page, 'tenant', { index: tenantCount - 1 });
 
-    const unitSelect = page.locator('select[name="unit"]');
-    const unitCount = await unitSelect.locator('option').count();
+    const unitCount = await comboOptionCount(page, 'unit');
     // Find the HOOK-U1 unit
-    const unitOptions = await unitSelect.locator('option').allTextContents();
+    const unitOptions = await comboOptionTexts(page, 'unit');
     const hookIdx = unitOptions.findIndex(o => o.includes('HOOK-U1-'+RUN_ID));
-    await unitSelect.selectOption({ index: hookIdx > 0 ? hookIdx : unitCount - 1 });
+    await comboSelect(page, 'unit', { index: hookIdx >= 0 ? hookIdx : unitCount - 1 });
 
     await page.fill('input[name="start_date"]', today());
     await page.fill('input[name="end_date"]', futureDate(1));
@@ -90,7 +89,7 @@ test.describe('Status Hook Automation (Admin Context)', () => {
   test('H.2 Expired lease (past end_date) → lease expired, unit vacant', async ({ page }) => {
     // Create unit
     await page.goto('/units/new');
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="unit_number"]', 'HOOK-U2-'+RUN_ID);
     await page.selectOption('select[name="type"]', 'apartment');
     await page.fill('input[placeholder="15,000"]', '10000');
@@ -115,15 +114,13 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
     // Create lease with past end_date
     await page.goto('/leases/new');
-    const tenantSelect = page.locator('select[name="tenant"]');
-    const tenantCount = await tenantSelect.locator('option').count();
-    if (tenantCount <= 1) return;
-    await tenantSelect.selectOption({ index: tenantCount - 1 });
+    const tenantCount = await comboOptionCount(page, 'tenant');
+    if (tenantCount < 1) return;
+    await comboSelect(page, 'tenant', { index: tenantCount - 1 });
 
-    const unitSelect = page.locator('select[name="unit"]');
-    const unitOptions = await unitSelect.locator('option').allTextContents();
+    const unitOptions = await comboOptionTexts(page, 'unit');
     const hookIdx = unitOptions.findIndex(o => o.includes('HOOK-U2-'+RUN_ID));
-    await unitSelect.selectOption({ index: hookIdx > 0 ? hookIdx : 1 });
+    await comboSelect(page, 'unit', { index: hookIdx >= 0 ? hookIdx : 0 });
 
     await page.fill('input[name="start_date"]', '2025-01-01');
     await page.fill('input[name="end_date"]', yesterday());
@@ -172,11 +169,8 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     await page.fill('input[name="last_name"]', 'One');
     await page.fill('input[name="phone"]', '+91 4444444401');
     await page.fill('input[name="role_title"]', 'Hook Staff');
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="property"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="current_address"]', 'Hook Emp Addr');
     await page.fill('input[name="permanent_address"]', 'Hook Emp Perm');
     await page.fill('input[name="emergency_contact_name"]', 'Hook EC');
@@ -191,10 +185,9 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
     // Create active agreement
     await page.goto('/agreements/new');
-    const empSelect = page.locator('select[name="employee"]');
-    const empCount = await empSelect.locator('option').count();
-    if (empCount <= 1) return;
-    await empSelect.selectOption({ index: empCount - 1 });
+    const empCount = await comboOptionCount(page, 'employee');
+    if (empCount < 1) return;
+    await comboSelect(page, 'employee', { index: empCount - 1 });
 
     await page.fill('input[name="start_date"]', today());
     await page.fill('input[name="end_date"]', futureDate(1));
@@ -222,11 +215,8 @@ test.describe('Status Hook Automation (Admin Context)', () => {
     await page.fill('input[name="last_name"]', 'Two');
     await page.fill('input[name="phone"]', '+91 4444444403');
     await page.fill('input[name="role_title"]', 'Hook Staff 2');
-    await page.waitForFunction(() => {
-      const s = document.querySelector('select[name="property"]');
-      return s && s.options.length > 1;
-    }, { timeout: 8000 });
-    await page.selectOption('select[name="property"]', { index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
     await page.fill('input[name="current_address"]', 'Hook2 Emp Addr');
     await page.fill('input[name="permanent_address"]', 'Hook2 Emp Perm');
     await page.fill('input[name="emergency_contact_name"]', 'Hook2 EC');
@@ -241,10 +231,9 @@ test.describe('Status Hook Automation (Admin Context)', () => {
 
     // Create expired agreement
     await page.goto('/agreements/new');
-    const empSelect = page.locator('select[name="employee"]');
-    const empCount = await empSelect.locator('option').count();
-    if (empCount <= 1) return;
-    await empSelect.selectOption({ index: empCount - 1 });
+    const empCount = await comboOptionCount(page, 'employee');
+    if (empCount < 1) return;
+    await comboSelect(page, 'employee', { index: empCount - 1 });
 
     await page.fill('input[name="start_date"]', '2025-01-01');
     await page.fill('input[name="end_date"]', yesterday());

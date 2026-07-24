@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { comboSelect, comboOptionTexts, waitComboOptions, comboRoot } = require('./helpers/searchable-select');
 
 const TEST_IMAGE = {
   name: 'test-attachment.png',
@@ -42,15 +43,15 @@ test.describe('Transactions — Admin creates all types', () => {
     await waitOpts(page, 'Type');
     await inField(page, 'Type').selectOption('rent_advice');
 
-    await waitOpts(page, 'Property');
-    await inField(page, 'Property').selectOption({ index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
 
-    // Tenant select appears after type selection
-    await waitOpts(page, 'Tenant');
-    const tenantOpts = await inField(page, 'Tenant').locator('option').allTextContents();
+    // Tenant combobox appears after type selection
+    await waitComboOptions(page, 'tenant');
+    const tenantOpts = await comboOptionTexts(page, 'tenant');
     const ravi = tenantOpts.find(o => o.includes('Ravi'));
-    if (ravi) await inField(page, 'Tenant').selectOption({ label: ravi });
-    else await inField(page, 'Tenant').selectOption({ index: 1 });
+    if (ravi) await comboSelect(page, 'tenant', ravi);
+    else await comboSelect(page, 'tenant', { index: 0 });
 
     // Amount may auto-fill from active lease — if not, enter manually
     await page.waitForTimeout(1000);
@@ -71,14 +72,14 @@ test.describe('Transactions — Admin creates all types', () => {
     await waitOpts(page, 'Type');
     await inField(page, 'Type').selectOption('other_tenant_advice');
 
-    await waitOpts(page, 'Property');
-    await inField(page, 'Property').selectOption({ index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
 
-    await waitOpts(page, 'Tenant');
-    const tenantOpts = await inField(page, 'Tenant').locator('option').allTextContents();
+    await waitComboOptions(page, 'tenant');
+    const tenantOpts = await comboOptionTexts(page, 'tenant');
     const ravi = tenantOpts.find(o => o.includes('Ravi'));
-    if (ravi) await inField(page, 'Tenant').selectOption({ label: ravi });
-    else await inField(page, 'Tenant').selectOption({ index: 1 });
+    if (ravi) await comboSelect(page, 'tenant', ravi);
+    else await comboSelect(page, 'tenant', { index: 0 });
 
     await inField(page, 'Amount', 'input').fill('2500');
     await inField(page, 'Remarks', 'textarea').fill('Maintenance charge');
@@ -95,15 +96,15 @@ test.describe('Transactions — Admin creates all types', () => {
     await waitOpts(page, 'Type');
     await inField(page, 'Type').selectOption('salary_advice');
 
-    await waitOpts(page, 'Property');
-    await inField(page, 'Property').selectOption({ index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
 
-    await waitOpts(page, 'Employee', 5000).catch(() => {});
-    const empOpts = await inField(page, 'Employee').locator('option').allTextContents();
-    if (empOpts.length <= 1) return; // no employees in DB — skip test gracefully
+    await waitComboOptions(page, 'employee', 1, 5000).catch(() => {});
+    const empOpts = await comboOptionTexts(page, 'employee');
+    if (empOpts.length < 1) return; // no employees in DB — skip test gracefully
     const amit = empOpts.find(o => o.includes('Amit') && !o.includes('awaiting'));
-    if (amit) await inField(page, 'Employee').selectOption({ label: amit });
-    else await inField(page, 'Employee').selectOption({ index: 1 });
+    if (amit) await comboSelect(page, 'employee', amit);
+    else await comboSelect(page, 'employee', { index: 0 });
 
     // Amount auto-fills from active agreement — wait then verify or fill manually
     await page.waitForTimeout(1500);
@@ -127,19 +128,19 @@ test.describe('Transactions — Admin creates all types', () => {
     await waitOpts(page, 'Type');
     await inField(page, 'Type').selectOption('vendor_invoice');
 
-    await waitOpts(page, 'Property');
-    await inField(page, 'Property').selectOption({ index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
 
-    await waitOpts(page, 'Vendor', 5000).catch(() => {});
-    const vendorOpts = await inField(page, 'Vendor').locator('option').allTextContents();
-    if (vendorOpts.length <= 1) return; // no vendors in DB — skip test gracefully
+    await waitComboOptions(page, 'vendor', 1, 5000).catch(() => {});
+    const vendorOpts = await comboOptionTexts(page, 'vendor');
+    if (vendorOpts.length < 1) return; // no vendors in DB — skip test gracefully
     const testVendor = vendorOpts.find(o => o.includes('Test Vendor'));
-    if (testVendor) await inField(page, 'Vendor').selectOption({ label: testVendor });
-    else await inField(page, 'Vendor').selectOption({ index: 1 });
+    if (testVendor) await comboSelect(page, 'vendor', testVendor);
+    else await comboSelect(page, 'vendor', { index: 0 });
 
     // Expense Category is required for vendor_invoice
-    await waitOpts(page, 'Expense Category');
-    await inField(page, 'Expense Category').selectOption({ index: 1 });
+    await waitComboOptions(page, 'expense_account');
+    await comboSelect(page, 'expense_account', { index: 0 });
 
     await inField(page, 'Amount', 'input').fill('8000');
     await inField(page, 'Remarks', 'textarea').fill('Plumbing repair');
@@ -156,18 +157,18 @@ test.describe('Transactions — Admin creates all types', () => {
     await waitOpts(page, 'Type');
     await inField(page, 'Type').selectOption('payment_receipt');
 
-    await waitOpts(page, 'Property');
-    await inField(page, 'Property').selectOption({ index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
 
     // Payment From → Tenant
     await waitOpts(page, 'Payment From');
     await inField(page, 'Payment From').selectOption('tenant');
 
-    await waitOpts(page, 'Tenant');
-    const tenantOpts = await inField(page, 'Tenant').locator('option').allTextContents();
+    await waitComboOptions(page, 'tenant');
+    const tenantOpts = await comboOptionTexts(page, 'tenant');
     const ravi = tenantOpts.find(o => o.includes('Ravi'));
-    if (ravi) await inField(page, 'Tenant').selectOption({ label: ravi });
-    else await inField(page, 'Tenant').selectOption({ index: 1 });
+    if (ravi) await comboSelect(page, 'tenant', ravi);
+    else await comboSelect(page, 'tenant', { index: 0 });
 
     // Payment Mode — Bank or Cash
     await waitOpts(page, 'Payment Mode');
@@ -196,11 +197,11 @@ test.describe('Transactions — Admin creates all types', () => {
     await waitOpts(page, 'Type');
     await inField(page, 'Type').selectOption('cash_payment');
 
-    await waitOpts(page, 'Property');
-    await inField(page, 'Property').selectOption({ index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
 
-    await waitOpts(page, 'Expense Category');
-    await inField(page, 'Expense Category').selectOption({ index: 1 });
+    await waitComboOptions(page, 'expense_account');
+    await comboSelect(page, 'expense_account', { index: 0 });
 
     // cash_payment uses hardcoded Cash account (1002) — no Payment Mode select shown
     await inField(page, 'Amount', 'input').fill('3000');
@@ -331,9 +332,9 @@ test.describe('Transactions — Employee expense claim', () => {
     // For employee, type field is hidden (auto-set) — form should show expense fields directly
 
     // Expense Category
-    await waitOpts(page, 'Expense Category').catch(() => {});
-    const expCat = inField(page, 'Expense Category');
-    if (await expCat.count() > 0) await expCat.selectOption({ index: 1 });
+    await waitComboOptions(page, 'expense_account').catch(() => {});
+    const expCat = comboRoot(page, 'expense_account');
+    if (await expCat.count() > 0) await comboSelect(page, 'expense_account', { index: 0 });
 
     // Payment Mode
     await waitOpts(page, 'Payment Mode').catch(() => {});
@@ -458,18 +459,18 @@ test.describe('Transactions — Landlord creates and views', () => {
 
     await typeSelect.selectOption('rent_advice');
 
-    await waitOpts(page, 'Property', 5000).catch(() => {});
-    const propSelect = inField(page, 'Property');
+    await waitComboOptions(page, 'property', 1, 5000).catch(() => {});
+    const propSelect = comboRoot(page, 'property');
     if (await propSelect.count() === 0) return; // form not showing property
-    const propOpts = await propSelect.locator('option').allTextContents();
-    if (propOpts.length <= 1) return; // no properties for this landlord
-    await propSelect.selectOption({ index: 1 });
+    const propOpts = await comboOptionTexts(page, 'property');
+    if (propOpts.length < 1) return; // no properties for this landlord
+    await comboSelect(page, 'property', { index: 0 });
 
-    await waitOpts(page, 'Tenant', 5000).catch(() => {});
-    const tenantOpts = await inField(page, 'Tenant').locator('option').allTextContents();
-    if (tenantOpts.length <= 1) return; // no tenants visible to this landlord
+    await waitComboOptions(page, 'tenant', 1, 5000).catch(() => {});
+    const tenantOpts = await comboOptionTexts(page, 'tenant');
+    if (tenantOpts.length < 1) return; // no tenants visible to this landlord
 
-    await inField(page, 'Tenant').selectOption({ index: 1 });
+    await comboSelect(page, 'tenant', { index: 0 });
     await page.waitForTimeout(1000);
 
     const amtVal = await inField(page, 'Amount', 'input').inputValue();
@@ -506,15 +507,15 @@ test.describe('Transactions — Deposit Advice and Mark Paid UX', () => {
     await waitOpts(page, 'Type');
     await inField(page, 'Type').selectOption('deposit_advice');
 
-    // deposit_advice auto-sets party type to 'tenant' — Tenant select should appear
-    await waitOpts(page, 'Property');
-    await inField(page, 'Property').selectOption({ index: 1 });
+    // deposit_advice auto-sets party type to 'tenant' — Tenant combobox should appear
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
 
-    await waitOpts(page, 'Tenant');
-    const tenantOpts = await inField(page, 'Tenant').locator('option').allTextContents();
+    await waitComboOptions(page, 'tenant');
+    const tenantOpts = await comboOptionTexts(page, 'tenant');
     const ravi = tenantOpts.find(o => o.includes('Ravi'));
-    if (ravi) await inField(page, 'Tenant').selectOption({ label: ravi });
-    else await inField(page, 'Tenant').selectOption({ index: 1 });
+    if (ravi) await comboSelect(page, 'tenant', ravi);
+    else await comboSelect(page, 'tenant', { index: 0 });
 
     await inField(page, 'Amount', 'input').fill('5000');
 
@@ -601,17 +602,17 @@ test.describe('Transactions — Deposit Advice and Mark Paid UX', () => {
     await waitOpts(page, 'Type');
     await inField(page, 'Type').selectOption('payment_receipt');
 
-    await waitOpts(page, 'Property');
-    await inField(page, 'Property').selectOption({ index: 1 });
+    await waitComboOptions(page, 'property');
+    await comboSelect(page, 'property', { index: 0 });
 
     await waitOpts(page, 'Payment From');
     await inField(page, 'Payment From').selectOption('tenant');
 
-    await waitOpts(page, 'Tenant');
-    const tenantOpts2 = await inField(page, 'Tenant').locator('option').allTextContents();
+    await waitComboOptions(page, 'tenant');
+    const tenantOpts2 = await comboOptionTexts(page, 'tenant');
     const ravi2 = tenantOpts2.find(o => o.includes('Ravi'));
-    if (ravi2) await inField(page, 'Tenant').selectOption({ label: ravi2 });
-    else await inField(page, 'Tenant').selectOption({ index: 1 });
+    if (ravi2) await comboSelect(page, 'tenant', ravi2);
+    else await comboSelect(page, 'tenant', { index: 0 });
 
     // Wait to confirm the checklist section never appears (feature removed)
     await page.waitForTimeout(1500);
