@@ -739,3 +739,721 @@ test.describe('Transactions — Server enforces dr/cr integrity constraints', ()
     expect(missingCr.status()).toBe(400);
   });
 });
+
+// ── Server-side: old direct-status PATCH contract is rejected ─────────────────
+// A markable type's status touching paid/partially_paid without payment_amount,
+// apply_advance_amount, or undo_last_payment in the body is the pre-partial-
+// payments API contract (see auth-server migration 016) — a stale client (e.g.
+// a precached PWA tab) sending it must be rejected, not silently accepted.
+test.describe('Transactions — Server rejects the old direct-status PATCH contract', () => {
+  test.use({ storageState: 'auth/adminStorage.json' });
+
+  test('TX.27 Direct status PATCH to paid without a payment action is rejected', async ({ page, request }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return; // session not established — skip gracefully
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    if (!token) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
+    const propId = (await propResp.json()).items?.[0]?.id;
+    if (!accId || !accId2 || !propId) return; // no reference data to test against — skip gracefully
+
+    const createResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'rent_advice',
+        date: new Date().toISOString().slice(0, 10),
+        property_id: propId,
+        party_type: 'tenant',
+        party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        amount: 5000,
+        dr_account_id: accId,
+        cr_account_id: accId2,
+        status: 'sent',
+        created_by: auth.model?.id,
+      },
+    });
+    expect(createResp.status()).toBe(200);
+    const bill = await createResp.json();
+
+    // Old contract: flip status straight to 'paid' with a payment_account_id but
+    // no payment_amount — this used to auto-create the settlement row; it must
+    // now be rejected outright rather than silently changing status underneath
+    // a stale settled_amount.
+    const resp = await request.patch(`${base}/transactions/records/${bill.id}`, {
+      headers,
+      data: { status: 'paid', payment_account_id: accId },
+    });
+    expect(resp.status()).toBe(400);
+  });
+});
+
+// ── Server-side: payment-action role/property re-check on every request ──────
+// A second (or later) partial payment can leave status unchanged
+// (partially_paid -> partially_paid), crossing no value boundary — the
+// role/active-landlord-of-property re-check must still fire on every payment
+// action, not just on a status transition, or a landlord removed from a
+// property mid-session could keep pushing payments through via the
+// UpdateRule's created_by allowance (see auth-server main.go, isPaymentAction).
+test.describe('Transactions — Server re-checks landlord property access on every payment action', () => {
+  test.use({ storageState: 'auth/landlordStorage.json' });
+
+  test('TX.28 A landlord deactivated from a property is blocked from a second partial payment on a bill they created', async ({ page, request, browser }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return; // session not established — skip gracefully
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    const landlordId = auth.model?.id;
+    if (!token || !landlordId) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    // A property this landlord is currently active on, per their own
+    // property_landlords row.
+    const plResp = await request.get(
+      `${base}/property_landlords/records?filter=${encodeURIComponent(`landlord = "${landlordId}" && status = "active"`)}&perPage=1`,
+      { headers }
+    );
+    const plRow = (await plResp.json()).items?.[0];
+    if (!plRow) return; // this landlord isn't active on any property — skip gracefully
+    const propId = plRow.property;
+    const plId = plRow.id;
+
+    // Separate admin session — deactivating a property_landlords row requires
+    // admin (its UpdateRule is admin-only; see auth-server migration 003), and
+    // funding the test advance from an admin session keeps the landlord
+    // identity narrowly scoped to just the actions under test.
+    const adminContext = await browser.newContext({ storageState: 'auth/adminStorage.json' });
+    const adminPage = await adminContext.newPage();
+    await adminPage.goto('/transactions');
+    await adminPage.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+    const adminAuthRaw = await adminPage.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!adminAuthRaw) { await adminContext.close(); return; }
+    const adminToken = JSON.parse(adminAuthRaw).token;
+    if (!adminToken) { await adminContext.close(); return; }
+    const adminHeaders = { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers: adminHeaders });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    if (!accId || !accId2) { await adminContext.close(); return; }
+
+    const partyId = `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    try {
+      const advResp = await request.post(`${base}/transactions/records`, {
+        headers: adminHeaders,
+        data: {
+          type: 'tenant_advance_payment',
+          date: new Date().toISOString().slice(0, 10),
+          property_id: propId,
+          party_type: 'tenant',
+          party_id: partyId,
+          amount: 5000,
+          dr_account_id: accId,
+          cr_account_id: accId2,
+        },
+      });
+      if (advResp.status() !== 200) return;
+
+      // The landlord creates the bill themselves, while still active.
+      const billResp = await request.post(`${base}/transactions/records`, {
+        headers,
+        data: {
+          type: 'rent_advice',
+          date: new Date().toISOString().slice(0, 10),
+          property_id: propId,
+          party_type: 'tenant',
+          party_id: partyId,
+          amount: 5000,
+          dr_account_id: accId,
+          cr_account_id: accId2,
+          status: 'sent',
+        },
+      });
+      if (billResp.status() !== 200) return;
+      const bill = await billResp.json();
+
+      // First partial payment — still active, must succeed.
+      const firstPay = await request.patch(`${base}/transactions/records/${bill.id}`, {
+        headers,
+        data: { apply_advance_amount: 2000 },
+      });
+      expect(firstPay.status()).toBe(200);
+
+      // Deactivate this landlord on the property.
+      const deactivate = await request.patch(`${base}/property_landlords/records/${plId}`, {
+        headers: adminHeaders,
+        data: { status: 'inactive' },
+      });
+      expect(deactivate.status()).toBe(200);
+
+      // Second partial payment on the same bill they created — must now be
+      // blocked, even though status stays partially_paid -> partially_paid.
+      // (The declarative UpdateRule alone would still allow this via its
+      // created_by = @request.auth.id clause — only this hook-level re-check
+      // catches it.)
+      const secondPay = await request.patch(`${base}/transactions/records/${bill.id}`, {
+        headers,
+        data: { apply_advance_amount: 1000 },
+      });
+      expect(secondPay.status()).toBe(403);
+    } finally {
+      // Always restore, so every other test relying on this landlord being
+      // active on this property isn't left broken.
+      await request.patch(`${base}/property_landlords/records/${plId}`, {
+        headers: adminHeaders,
+        data: { status: 'active' },
+      });
+      await adminContext.close();
+    }
+  });
+});
+
+// ── Server-side: payment_amount cannot exceed the outstanding balance ────────
+test.describe('Transactions — Server rejects an over-payment via payment_amount', () => {
+  test.use({ storageState: 'auth/adminStorage.json' });
+
+  test('TX.29 payment_amount greater than the bill balance is rejected', async ({ page, request }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return;
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    if (!token) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
+    const propId = (await propResp.json()).items?.[0]?.id;
+    if (!accId || !accId2 || !propId) return;
+
+    const createResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'rent_advice',
+        date: new Date().toISOString().slice(0, 10),
+        property_id: propId,
+        party_type: 'tenant',
+        party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        amount: 5000,
+        dr_account_id: accId,
+        cr_account_id: accId2,
+        status: 'sent',
+        created_by: auth.model?.id,
+      },
+    });
+    expect(createResp.status()).toBe(200);
+    const bill = await createResp.json();
+
+    const resp = await request.patch(`${base}/transactions/records/${bill.id}`, {
+      headers,
+      data: { payment_amount: 6000, payment_account_id: accId },
+    });
+    expect(resp.status()).toBe(400);
+  });
+});
+
+// ── Server-side: apply_advance_amount cannot exceed the available advance balance ─
+// Distinct from TX.29's check — the bill itself has plenty of room, but the
+// party behind it has no prepaid advance at all. applyAdvanceToBill returns a
+// plain Go error in this case (not an apis.ApiError), which PocketBase's
+// router wraps into a generic 400 — so this asserts status only, not message
+// content (see auth-server main.go, applyAdvanceToBill's "insufficient advance
+// balance" branch, and tools/router/error.go's ToApiError fallback).
+test.describe('Transactions — Server rejects apply_advance_amount beyond the available advance balance', () => {
+  test.use({ storageState: 'auth/adminStorage.json' });
+
+  test('TX.30 apply_advance_amount greater than the party\'s available advance balance is rejected', async ({ page, request }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return;
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    if (!token) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
+    const propId = (await propResp.json()).items?.[0]?.id;
+    if (!accId || !accId2 || !propId) return;
+
+    // A brand-new synthetic party has no advance records at all — the bill
+    // total is kept large so this specifically trips the party's-available-
+    // advance-balance check, not the bill's-own-outstanding-balance check.
+    const createResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'rent_advice',
+        date: new Date().toISOString().slice(0, 10),
+        property_id: propId,
+        party_type: 'tenant',
+        party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        amount: 999999,
+        dr_account_id: accId,
+        cr_account_id: accId2,
+        status: 'sent',
+        created_by: auth.model?.id,
+      },
+    });
+    expect(createResp.status()).toBe(200);
+    const bill = await createResp.json();
+
+    const resp = await request.patch(`${base}/transactions/records/${bill.id}`, {
+      headers,
+      data: { apply_advance_amount: 500 },
+    });
+    expect(resp.status()).toBe(400);
+  });
+});
+
+// ── Server-side: apply_advance_amount consumes the party's advances FIFO ─────
+// applyAdvanceToBill sorts the party's advances by "created" ascending (oldest
+// first) and splits a single apply_advance_amount request across as many as
+// needed, one payment_receipt per advance touched, each stamped with the
+// source advance's id.
+test.describe('Transactions — Server FIFO-splits apply_advance_amount across multiple advances', () => {
+  test.use({ storageState: 'auth/adminStorage.json' });
+
+  test('TX.31 apply_advance_amount spanning two advances splits into two payment_receipt rows, oldest advance first', async ({ page, request }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return;
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    if (!token) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
+    const propId = (await propResp.json()).items?.[0]?.id;
+    if (!accId || !accId2 || !propId) return;
+
+    const partyId = `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const today = new Date().toISOString().slice(0, 10);
+
+    const adv1Resp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'tenant_advance_payment', date: today, property_id: propId,
+        party_type: 'tenant', party_id: partyId, amount: 5000,
+        dr_account_id: accId, cr_account_id: accId2, created_by: auth.model?.id,
+      },
+    });
+    expect(adv1Resp.status()).toBe(200);
+    const adv1 = await adv1Resp.json();
+
+    const adv2Resp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'tenant_advance_payment', date: today, property_id: propId,
+        party_type: 'tenant', party_id: partyId, amount: 4000,
+        dr_account_id: accId, cr_account_id: accId2, created_by: auth.model?.id,
+      },
+    });
+    expect(adv2Resp.status()).toBe(200);
+    const adv2 = await adv2Resp.json();
+
+    const billResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'rent_advice', date: today, property_id: propId,
+        party_type: 'tenant', party_id: partyId, amount: 20000,
+        dr_account_id: accId, cr_account_id: accId2, status: 'sent', created_by: auth.model?.id,
+      },
+    });
+    expect(billResp.status()).toBe(200);
+    const bill = await billResp.json();
+
+    const applyResp = await request.patch(`${base}/transactions/records/${bill.id}`, {
+      headers,
+      data: { apply_advance_amount: 8000 },
+    });
+    expect(applyResp.status()).toBe(200);
+    const updatedBill = await applyResp.json();
+    expect(updatedBill.settled_amount).toBe(8000);
+    expect(updatedBill.status).toBe('partially_paid');
+
+    const receiptsResp = await request.get(
+      `${base}/transactions/records?filter=${encodeURIComponent(`type = "payment_receipt" && ref_id = "${bill.id}"`)}`,
+      { headers }
+    );
+    const receipts = (await receiptsResp.json()).items || [];
+    expect(receipts.length).toBe(2);
+
+    const r1 = receipts.find(r => r.source_advance_id === adv1.id);
+    const r2 = receipts.find(r => r.source_advance_id === adv2.id);
+    expect(r1?.amount).toBe(5000);
+    expect(r2?.amount).toBe(3000);
+  });
+});
+
+// ── Server-side: undoing an advance-funded payment restores that advance's available balance ─
+// An advance's available balance is always computed live (amount minus its own
+// consumed payment_receipts), never stored — so undo_last_payment needs no
+// separate bookkeeping to "give back" what it funded; deleting the receipt is
+// enough. This proves the restore by re-applying the full original amount.
+test.describe('Transactions — Undo Last Payment restores the funding advance\'s available balance', () => {
+  test.use({ storageState: 'auth/adminStorage.json' });
+
+  test('TX.32 undo_last_payment after an advance-funded settlement lets the same advance be reapplied in full', async ({ page, request }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return;
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    if (!token) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
+    const propId = (await propResp.json()).items?.[0]?.id;
+    if (!accId || !accId2 || !propId) return;
+
+    const partyId = `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const today = new Date().toISOString().slice(0, 10);
+
+    const advResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'tenant_advance_payment', date: today, property_id: propId,
+        party_type: 'tenant', party_id: partyId, amount: 6000,
+        dr_account_id: accId, cr_account_id: accId2, created_by: auth.model?.id,
+      },
+    });
+    expect(advResp.status()).toBe(200);
+    const advance = await advResp.json();
+
+    const billResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'rent_advice', date: today, property_id: propId,
+        party_type: 'tenant', party_id: partyId, amount: 10000,
+        dr_account_id: accId, cr_account_id: accId2, status: 'sent', created_by: auth.model?.id,
+      },
+    });
+    expect(billResp.status()).toBe(200);
+    const bill = await billResp.json();
+
+    const applyResp = await request.patch(`${base}/transactions/records/${bill.id}`, {
+      headers, data: { apply_advance_amount: 6000 },
+    });
+    expect(applyResp.status()).toBe(200);
+    expect((await applyResp.json()).settled_amount).toBe(6000);
+
+    const undoResp = await request.patch(`${base}/transactions/records/${bill.id}`, {
+      headers, data: { undo_last_payment: true },
+    });
+    expect(undoResp.status()).toBe(200);
+    const afterUndo = await undoResp.json();
+    expect(afterUndo.settled_amount).toBe(0);
+    expect(afterUndo.status).toBe('sent');
+
+    // The advance's available balance should be fully restored — re-applying
+    // the full original amount must succeed again.
+    const reapplyResp = await request.patch(`${base}/transactions/records/${bill.id}`, {
+      headers, data: { apply_advance_amount: 6000 },
+    });
+    expect(reapplyResp.status()).toBe(200);
+    const afterReapply = await reapplyResp.json();
+    expect(afterReapply.settled_amount).toBe(6000);
+    expect(afterReapply.status).toBe('partially_paid');
+
+    const receiptsResp = await request.get(
+      `${base}/transactions/records?filter=${encodeURIComponent(`type = "payment_receipt" && ref_id = "${bill.id}"`)}`,
+      { headers }
+    );
+    const receipts = (await receiptsResp.json()).items || [];
+    expect(receipts.length).toBe(1);
+    expect(receipts[0].source_advance_id).toBe(advance.id);
+    expect(receipts[0].amount).toBe(6000);
+  });
+});
+
+// ── Server-side: a bill or advance with linked payments cannot be deleted ────
+// The same delete guard covers both directions of the ref_id/source_advance_id
+// link — a single payment_receipt blocks deleting either the bill it settles
+// (ref_id) or the advance that funded it (source_advance_id) — until it is
+// undone via undo_last_payment.
+test.describe('Transactions — Server blocks deleting a bill or advance with linked payment history', () => {
+  test.use({ storageState: 'auth/adminStorage.json' });
+
+  test('TX.33 Deleting a bill or its funding advance is blocked while a payment_receipt links them, and succeeds once undone', async ({ page, request }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return;
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    if (!token) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
+    const propId = (await propResp.json()).items?.[0]?.id;
+    if (!accId || !accId2 || !propId) return;
+
+    const partyId = `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const today = new Date().toISOString().slice(0, 10);
+
+    const advResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'tenant_advance_payment', date: today, property_id: propId,
+        party_type: 'tenant', party_id: partyId, amount: 3000,
+        dr_account_id: accId, cr_account_id: accId2, created_by: auth.model?.id,
+      },
+    });
+    expect(advResp.status()).toBe(200);
+    const advance = await advResp.json();
+
+    const billResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'rent_advice', date: today, property_id: propId,
+        party_type: 'tenant', party_id: partyId, amount: 5000,
+        dr_account_id: accId, cr_account_id: accId2, status: 'sent', created_by: auth.model?.id,
+      },
+    });
+    expect(billResp.status()).toBe(200);
+    const bill = await billResp.json();
+
+    const applyResp = await request.patch(`${base}/transactions/records/${bill.id}`, {
+      headers, data: { apply_advance_amount: 2000 },
+    });
+    expect(applyResp.status()).toBe(200);
+
+    // Both the bill and its funding advance now have exactly one linked
+    // payment_receipt — neither should be deletable while it exists.
+    const delBillBlocked = await request.delete(`${base}/transactions/records/${bill.id}`, { headers });
+    expect(delBillBlocked.status()).toBe(400);
+
+    const delAdvBlocked = await request.delete(`${base}/transactions/records/${advance.id}`, { headers });
+    expect(delAdvBlocked.status()).toBe(400);
+
+    // Undo the one payment linking them — both deletes must now succeed.
+    const undoResp = await request.patch(`${base}/transactions/records/${bill.id}`, {
+      headers, data: { undo_last_payment: true },
+    });
+    expect(undoResp.status()).toBe(200);
+
+    const delBillOk = await request.delete(`${base}/transactions/records/${bill.id}`, { headers });
+    expect(delBillOk.status()).toBe(204);
+
+    const delAdvOk = await request.delete(`${base}/transactions/records/${advance.id}`, { headers });
+    expect(delAdvOk.status()).toBe(204);
+  });
+});
+
+// ── UI: partial payment and Undo Last Payment on the transaction card ────────
+// Fixtures are created via direct API calls (see the describe blocks above);
+// only the Mark Paid / Undo Last Payment interaction itself is driven through
+// the actual TransactionsList.jsx card UI, per the .portal-btn/.pay-confirm
+// pattern already exercised by TX.20/TX.20b.
+test.describe('Transactions — Partial payment and Undo Last Payment UI', () => {
+  test.use({ storageState: 'auth/adminStorage.json' });
+
+  test('TX.34 Partial Mark Paid updates the card balance, status, and payment history in place', async ({ page, request }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return;
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    if (!token) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
+    const propId = (await propResp.json()).items?.[0]?.id;
+    if (!accId || !accId2 || !propId) return;
+
+    const marker = `TX34-${Date.now()}`;
+    const createResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'rent_advice',
+        date: new Date().toISOString().slice(0, 10),
+        property_id: propId,
+        party_type: 'tenant',
+        party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        amount: 10000,
+        dr_account_id: accId,
+        cr_account_id: accId2,
+        status: 'sent',
+        remarks: marker,
+        created_by: auth.model?.id,
+      },
+    });
+    if (createResp.status() !== 200) return; // fixture setup failed — nothing to drive in the UI
+
+    // Reload so the freshly created bill (created via direct API, not through
+    // the page's own React state) actually appears in the list.
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const card = page.locator('.record-card').filter({ hasText: marker }).first();
+    await expect(card).toBeVisible({ timeout: 10000 });
+
+    await card.locator('.portal-btn', { hasText: 'Mark Paid' }).click();
+    const amountInput = card.locator('.pay-confirm-amount');
+    await expect(amountInput).toBeVisible();
+    await amountInput.fill('4000');
+    await card.locator('.pay-confirm-bank').click();
+
+    // Optimistic in-place update — wait for it to land, no navigation should occur.
+    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    expect(page.url()).toContain('/transactions');
+
+    await expect(card.locator('.card-balance')).toHaveText('Paid 4,000 / Balance 6,000');
+    await expect(card.locator('.badge')).toHaveText('Partially Paid');
+
+    // Still only partially paid — a Mark Paid button (for the remaining
+    // balance) must still be offered.
+    await expect(card.locator('.portal-btn', { hasText: 'Mark Paid' })).toBeVisible();
+
+    const historyBtn = card.locator('.portal-btn', { hasText: 'Payment History' });
+    await expect(historyBtn).toHaveText('Show Payment History (1)');
+    await historyBtn.click();
+    const historyItems = card.locator('.payment-history-item');
+    await expect(historyItems).toHaveCount(1);
+    await expect(historyItems.first()).toContainText('4,000');
+    await expect(historyItems.first()).toContainText('via Bank');
+  });
+
+  test('TX.35 Undo Last Payment reverts only the most recent payment, not the whole bill, when 2+ payments exist', async ({ page, request }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return;
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    if (!token) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
+    const propId = (await propResp.json()).items?.[0]?.id;
+    if (!accId || !accId2 || !propId) return;
+
+    const partyId = `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const marker = `TX35-${Date.now()}`;
+    const today = new Date().toISOString().slice(0, 10);
+
+    const advResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'tenant_advance_payment', date: today, property_id: propId,
+        party_type: 'tenant', party_id: partyId, amount: 10000,
+        dr_account_id: accId, cr_account_id: accId2, created_by: auth.model?.id,
+      },
+    });
+    if (advResp.status() !== 200) return;
+
+    const createResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'rent_advice', date: today, property_id: propId,
+        party_type: 'tenant', party_id: partyId, amount: 10000,
+        dr_account_id: accId, cr_account_id: accId2, status: 'sent', remarks: marker,
+        created_by: auth.model?.id,
+      },
+    });
+    if (createResp.status() !== 200) return;
+    const bill = await createResp.json();
+
+    const firstApply = await request.patch(`${base}/transactions/records/${bill.id}`, {
+      headers, data: { apply_advance_amount: 3000 },
+    });
+    if (firstApply.status() !== 200) return;
+    const secondApply = await request.patch(`${base}/transactions/records/${bill.id}`, {
+      headers, data: { apply_advance_amount: 2000 },
+    });
+    if (secondApply.status() !== 200) return;
+
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const card = page.locator('.record-card').filter({ hasText: marker }).first();
+    await expect(card).toBeVisible({ timeout: 10000 });
+    await expect(card.locator('.card-balance')).toHaveText('Paid 5,000 / Balance 5,000');
+
+    await card.locator('.portal-btn', { hasText: 'Undo Last Payment' }).click();
+    await card.locator('.pay-confirm').getByRole('button', { name: 'Confirm' }).click();
+
+    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    expect(page.url()).toContain('/transactions');
+
+    // Reverted by exactly one payment (the most recent, 2000) — not all the
+    // way back to zero.
+    await expect(card.locator('.card-balance')).toHaveText('Paid 3,000 / Balance 7,000');
+    await expect(card.locator('.badge')).toHaveText('Partially Paid');
+
+    const historyBtn = card.locator('.portal-btn', { hasText: 'Payment History' });
+    await expect(historyBtn).toHaveText('Show Payment History (1)');
+  });
+});
