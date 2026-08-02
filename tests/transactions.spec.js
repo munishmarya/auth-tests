@@ -1456,4 +1456,95 @@ test.describe('Transactions — Partial payment and Undo Last Payment UI', () =>
     const historyBtn = card.locator('.portal-btn', { hasText: 'Payment History' });
     await expect(historyBtn).toHaveText('Show Payment History (1)');
   });
+
+  test('TX.36 Receipt Ref # is stored in payment history when provided, and falls back to the default remark when left blank', async ({ page, request }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return;
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    if (!token) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
+    const propId = (await propResp.json()).items?.[0]?.id;
+    if (!accId || !accId2 || !propId) return;
+
+    const marker = `TX36-${Date.now()}`;
+    const createResp = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        type: 'rent_advice',
+        date: new Date().toISOString().slice(0, 10),
+        property_id: propId,
+        party_type: 'tenant',
+        party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        amount: 10000,
+        dr_account_id: accId,
+        cr_account_id: accId2,
+        status: 'sent',
+        remarks: marker,
+        created_by: auth.model?.id,
+      },
+    });
+    if (createResp.status() !== 200) return; // fixture setup failed — nothing to drive in the UI
+
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const card = page.locator('.record-card').filter({ hasText: marker }).first();
+    await expect(card).toBeVisible({ timeout: 10000 });
+
+    const receiptRef = `CB-${Date.now()}`;
+
+    // First payment: provide a Receipt Ref # — it should replace the
+    // default "Auto-settlement for ..." remark in the history line.
+    await card.locator('.portal-btn', { hasText: 'Mark Paid' }).click();
+    await card.locator('.pay-confirm-amount').fill('4000');
+    await card.locator('.pay-confirm-receipt-ref').fill(receiptRef);
+    await card.locator('.pay-confirm-bank').click();
+
+    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    expect(page.url()).toContain('/transactions');
+
+    await expect(card.locator('.card-balance')).toHaveText('Paid 4,000 / Balance 6,000');
+
+    // Second payment on the remaining balance: leave the Receipt Ref #
+    // blank — should fall back to the generic auto-settlement remark.
+    await card.locator('.portal-btn', { hasText: 'Mark Paid' }).click();
+    await card.locator('.pay-confirm-amount').fill('6000');
+    await card.locator('.pay-confirm-bank').click();
+
+    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    expect(page.url()).toContain('/transactions');
+
+    await expect(card.locator('.card-balance')).toHaveText('Paid 10,000 / Balance 0');
+    await expect(card.locator('.badge')).toHaveText('Paid');
+
+    const historyBtn = card.locator('.portal-btn', { hasText: 'Payment History' });
+    await expect(historyBtn).toHaveText('Show Payment History (2)');
+    await historyBtn.click();
+
+    const historyItems = card.locator('.payment-history-item');
+    await expect(historyItems).toHaveCount(2);
+
+    // History is sorted newest-first, so the second (blank-ref) payment is
+    // item 0 and the first (with receiptRef) payment is item 1.
+    await expect(historyItems.nth(0)).toContainText('6,000');
+    await expect(historyItems.nth(0)).not.toContainText(receiptRef);
+    await expect(historyItems.nth(0).locator('.payment-history-ref')).toContainText('Auto-settlement for rent_advice');
+
+    await expect(historyItems.nth(1)).toContainText('4,000');
+    await expect(historyItems.nth(1).locator('.payment-history-ref')).toHaveText(receiptRef);
+  });
 });
