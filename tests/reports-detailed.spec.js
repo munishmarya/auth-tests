@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { comboSelect, comboOptionCount } = require('./helpers/searchable-select');
+const { comboSelect, comboOptionCount, comboRoot } = require('./helpers/searchable-select');
 
 // ── Income Statement — Admin ──────────────────────────────────────────────────
 test.describe('Income Statement (Admin)', () => {
@@ -97,6 +97,36 @@ test.describe('Income Statement (Admin)', () => {
       await expect(page).toHaveURL(/\/transactions/, { timeout: 8000 });
     }
   });
+
+  test('RPT.15 Income Statement drill-down carries the property filter, and Back restores year/month/property', async ({ page }) => {
+    await page.goto('/income-statement');
+    await page.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
+
+    // Pick a specific property (not "All Properties") and a specific month,
+    // so we have non-default state to verify survives the round trip.
+    const count = await comboOptionCount(page, 'property_filter');
+    if (count < 1) return; // no properties to filter by — nothing to distinguish
+    await comboSelect(page, 'property_filter', { index: 0 });
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    const chosenValue = await comboRoot(page, 'property_filter').locator('input').inputValue();
+
+    const monthSelect = page.locator('select').nth(1);
+    await monthSelect.selectOption({ index: 0 }); // January
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+
+    const drillLink = page.locator('.drill-link').first();
+    if (await drillLink.count() === 0) return; // no drillable row for this property/month
+
+    await drillLink.click();
+    await expect(page).toHaveURL(/\/transactions/, { timeout: 8000 });
+
+    await page.click('.back-btn');
+    await page.waitForURL('**/income-statement', { timeout: 8000 });
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+
+    await expect(comboRoot(page, 'property_filter').locator('input')).toHaveValue(chosenValue);
+    await expect(page.locator('select').nth(1)).toHaveValue('0');
+  });
 });
 
 // ── Balance Sheet — Admin ─────────────────────────────────────────────────────
@@ -158,6 +188,31 @@ test.describe('Balance Sheet (Admin)', () => {
     await page.goto('/balance-sheet');
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
     await expect(page.locator('.report-asof')).toBeVisible({ timeout: 5000 });
+  });
+
+  test('RPT.16 Balance Sheet drill-down carries the property filter, and Back restores it', async ({ page }) => {
+    await page.goto('/balance-sheet');
+    await page.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
+
+    const count = await comboOptionCount(page, 'property_filter');
+    if (count < 1) return; // no properties to filter by — nothing to distinguish
+    await comboSelect(page, 'property_filter', { index: 0 });
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+
+    const propertyInput = comboRoot(page, 'property_filter').locator('input');
+    const chosenValue = await propertyInput.inputValue();
+
+    const drillRow = page.locator('tr.data-row').first();
+    if (await drillRow.count() === 0) return; // no drillable row for this property
+
+    await drillRow.click();
+    await expect(page).toHaveURL(/\/transactions/, { timeout: 8000 });
+
+    await page.click('.back-btn');
+    await page.waitForURL('**/balance-sheet', { timeout: 8000 });
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+
+    await expect(comboRoot(page, 'property_filter').locator('input')).toHaveValue(chosenValue);
   });
 });
 

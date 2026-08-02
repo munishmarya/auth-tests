@@ -28,6 +28,17 @@ async function waitOpts(page, labelText, timeout = 8000) {
   }, labelText, { timeout });
 }
 
+// rent_advice/deposit_advice/other_tenant_advice fixtures created via direct
+// API POST require a unit_id belonging to the fixture's property (mirrors
+// TENANT_UNIT_REQUIRED_TX_TYPES in main.go) — fetch any unit under propId.
+async function getUnitForProperty(request, base, headers, propId) {
+  const resp = await request.get(
+    `${base}/units/records?perPage=1&filter=${encodeURIComponent(`property = "${propId}"`)}`,
+    { headers }
+  );
+  return (await resp.json()).items?.[0]?.id;
+}
+
 // ── Admin: create all transaction types ───────────────────────────────────────
 test.describe('Transactions — Admin creates all types', () => {
   test.use({ storageState: 'auth/adminStorage.json' });
@@ -710,7 +721,9 @@ test.describe('Transactions — Server enforces dr/cr integrity constraints', ()
     const accId2 = accItems[1]?.id;
     const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
     const propId = (await propResp.json()).items?.[0]?.id;
-    if (!accId || !accId2 || !propId) return; // no reference data to test against — skip gracefully
+    if (!accId || !accId2 || !propId) return;
+    const unitId = await getUnitForProperty(request, base, headers, propId);
+    if (!unitId) return; // no reference data to test against — skip gracefully
 
     const basePayload = {
       type: 'cash_payment',
@@ -737,6 +750,84 @@ test.describe('Transactions — Server enforces dr/cr integrity constraints', ()
       data: { ...basePayload, amount: 100, dr_account_id: accId },
     });
     expect(missingCr.status()).toBe(400);
+  });
+});
+
+// ── Server-side: tenant transactions require a unit belonging to the property ─
+// TENANT_UNIT_REQUIRED_TX_TYPES (main.go) requires rent_advice/deposit_advice/
+// other_tenant_advice to carry a unit_id, and that unit must belong to the
+// submitted property_id — added alongside the unit-scoping feature.
+test.describe('Transactions — Server requires a matching unit_id on tenant advice types', () => {
+  test.use({ storageState: 'auth/adminStorage.json' });
+
+  test('TX.37 rent_advice without unit_id, or with a unit_id from another property, is rejected', async ({ page, request }) => {
+    await page.goto('/transactions');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const pbAuthRaw = await page.evaluate(() => localStorage.getItem('pocketbase_auth'));
+    if (!pbAuthRaw) return;
+    const auth = JSON.parse(pbAuthRaw);
+    const token = auth.token;
+    if (!token) return;
+
+    const base = 'https://testpmsmmarya.duckdns.org/api/collections';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const accResp = await request.get(`${base}/accounts/records?perPage=2`, { headers });
+    const accItems = (await accResp.json()).items || [];
+    const accId = accItems[0]?.id;
+    const accId2 = accItems[1]?.id;
+    const propsResp = await request.get(`${base}/properties/records?perPage=2`, { headers });
+    const propItems = (await propsResp.json()).items || [];
+    const propId = propItems[0]?.id;
+    const otherPropId = propItems[1]?.id;
+    if (!accId || !accId2 || !propId) return;
+    const unitId = await getUnitForProperty(request, base, headers, propId);
+    if (!unitId) return; // no unit under this property — skip gracefully
+
+    const basePayload = {
+      type: 'rent_advice',
+      date: new Date().toISOString().slice(0, 10),
+      property_id: propId,
+      party_type: 'tenant',
+      amount: 5000,
+      dr_account_id: accId,
+      cr_account_id: accId2,
+      status: 'sent',
+      created_by: auth.model?.id,
+    };
+
+    const missingUnit = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: { ...basePayload, party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` },
+    });
+    expect(missingUnit.status()).toBe(400);
+
+    // Only meaningful if a second property with its own unit exists.
+    if (otherPropId) {
+      const otherUnitId = await getUnitForProperty(request, base, headers, otherPropId);
+      if (otherUnitId && otherUnitId !== unitId) {
+        const mismatchedUnit = await request.post(`${base}/transactions/records`, {
+          headers,
+          data: {
+            ...basePayload,
+            unit_id: otherUnitId,
+            party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          },
+        });
+        expect(mismatchedUnit.status()).toBe(400);
+      }
+    }
+
+    const valid = await request.post(`${base}/transactions/records`, {
+      headers,
+      data: {
+        ...basePayload,
+        unit_id: unitId,
+        party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      },
+    });
+    expect(valid.status()).toBe(200);
   });
 });
 
@@ -767,7 +858,9 @@ test.describe('Transactions — Server rejects the old direct-status PATCH contr
     const accId2 = accItems[1]?.id;
     const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
     const propId = (await propResp.json()).items?.[0]?.id;
-    if (!accId || !accId2 || !propId) return; // no reference data to test against — skip gracefully
+    if (!accId || !accId2 || !propId) return;
+    const unitId = await getUnitForProperty(request, base, headers, propId);
+    if (!unitId) return; // no unit under this property — skip gracefully
 
     const createResp = await request.post(`${base}/transactions/records`, {
       headers,
@@ -775,6 +868,7 @@ test.describe('Transactions — Server rejects the old direct-status PATCH contr
         type: 'rent_advice',
         date: new Date().toISOString().slice(0, 10),
         property_id: propId,
+        unit_id: unitId,
         party_type: 'tenant',
         party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         amount: 5000,
@@ -853,6 +947,8 @@ test.describe('Transactions — Server re-checks landlord property access on eve
     const accId = accItems[0]?.id;
     const accId2 = accItems[1]?.id;
     if (!accId || !accId2) { await adminContext.close(); return; }
+    const unitId = await getUnitForProperty(request, base, adminHeaders, propId);
+    if (!unitId) { await adminContext.close(); return; }
 
     const partyId = `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -879,6 +975,7 @@ test.describe('Transactions — Server re-checks landlord property access on eve
           type: 'rent_advice',
           date: new Date().toISOString().slice(0, 10),
           property_id: propId,
+          unit_id: unitId,
           party_type: 'tenant',
           party_id: partyId,
           amount: 5000,
@@ -950,6 +1047,8 @@ test.describe('Transactions — Server rejects an over-payment via payment_amoun
     const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
     const propId = (await propResp.json()).items?.[0]?.id;
     if (!accId || !accId2 || !propId) return;
+    const unitId = await getUnitForProperty(request, base, headers, propId);
+    if (!unitId) return;
 
     const createResp = await request.post(`${base}/transactions/records`, {
       headers,
@@ -957,6 +1056,7 @@ test.describe('Transactions — Server rejects an over-payment via payment_amoun
         type: 'rent_advice',
         date: new Date().toISOString().slice(0, 10),
         property_id: propId,
+        unit_id: unitId,
         party_type: 'tenant',
         party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         amount: 5000,
@@ -1007,6 +1107,8 @@ test.describe('Transactions — Server rejects apply_advance_amount beyond the a
     const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
     const propId = (await propResp.json()).items?.[0]?.id;
     if (!accId || !accId2 || !propId) return;
+    const unitId = await getUnitForProperty(request, base, headers, propId);
+    if (!unitId) return;
 
     // A brand-new synthetic party has no advance records at all — the bill
     // total is kept large so this specifically trips the party's-available-
@@ -1017,6 +1119,7 @@ test.describe('Transactions — Server rejects apply_advance_amount beyond the a
         type: 'rent_advice',
         date: new Date().toISOString().slice(0, 10),
         property_id: propId,
+        unit_id: unitId,
         party_type: 'tenant',
         party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         amount: 999999,
@@ -1065,6 +1168,8 @@ test.describe('Transactions — Server FIFO-splits apply_advance_amount across m
     const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
     const propId = (await propResp.json()).items?.[0]?.id;
     if (!accId || !accId2 || !propId) return;
+    const unitId = await getUnitForProperty(request, base, headers, propId);
+    if (!unitId) return;
 
     const partyId = `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const today = new Date().toISOString().slice(0, 10);
@@ -1094,7 +1199,7 @@ test.describe('Transactions — Server FIFO-splits apply_advance_amount across m
     const billResp = await request.post(`${base}/transactions/records`, {
       headers,
       data: {
-        type: 'rent_advice', date: today, property_id: propId,
+        type: 'rent_advice', date: today, property_id: propId, unit_id: unitId,
         party_type: 'tenant', party_id: partyId, amount: 20000,
         dr_account_id: accId, cr_account_id: accId2, status: 'sent', created_by: auth.model?.id,
       },
@@ -1153,6 +1258,8 @@ test.describe('Transactions — Undo Last Payment restores the funding advance\'
     const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
     const propId = (await propResp.json()).items?.[0]?.id;
     if (!accId || !accId2 || !propId) return;
+    const unitId = await getUnitForProperty(request, base, headers, propId);
+    if (!unitId) return;
 
     const partyId = `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const today = new Date().toISOString().slice(0, 10);
@@ -1171,7 +1278,7 @@ test.describe('Transactions — Undo Last Payment restores the funding advance\'
     const billResp = await request.post(`${base}/transactions/records`, {
       headers,
       data: {
-        type: 'rent_advice', date: today, property_id: propId,
+        type: 'rent_advice', date: today, property_id: propId, unit_id: unitId,
         party_type: 'tenant', party_id: partyId, amount: 10000,
         dr_account_id: accId, cr_account_id: accId2, status: 'sent', created_by: auth.model?.id,
       },
@@ -1242,6 +1349,8 @@ test.describe('Transactions — Server blocks deleting a bill or advance with li
     const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
     const propId = (await propResp.json()).items?.[0]?.id;
     if (!accId || !accId2 || !propId) return;
+    const unitId = await getUnitForProperty(request, base, headers, propId);
+    if (!unitId) return;
 
     const partyId = `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const today = new Date().toISOString().slice(0, 10);
@@ -1260,7 +1369,7 @@ test.describe('Transactions — Server blocks deleting a bill or advance with li
     const billResp = await request.post(`${base}/transactions/records`, {
       headers,
       data: {
-        type: 'rent_advice', date: today, property_id: propId,
+        type: 'rent_advice', date: today, property_id: propId, unit_id: unitId,
         party_type: 'tenant', party_id: partyId, amount: 5000,
         dr_account_id: accId, cr_account_id: accId2, status: 'sent', created_by: auth.model?.id,
       },
@@ -1323,6 +1432,8 @@ test.describe('Transactions — Partial payment and Undo Last Payment UI', () =>
     const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
     const propId = (await propResp.json()).items?.[0]?.id;
     if (!accId || !accId2 || !propId) return;
+    const unitId = await getUnitForProperty(request, base, headers, propId);
+    if (!unitId) return;
 
     const marker = `TX34-${Date.now()}`;
     const createResp = await request.post(`${base}/transactions/records`, {
@@ -1331,6 +1442,7 @@ test.describe('Transactions — Partial payment and Undo Last Payment UI', () =>
         type: 'rent_advice',
         date: new Date().toISOString().slice(0, 10),
         property_id: propId,
+        unit_id: unitId,
         party_type: 'tenant',
         party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         amount: 10000,
@@ -1398,6 +1510,8 @@ test.describe('Transactions — Partial payment and Undo Last Payment UI', () =>
     const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
     const propId = (await propResp.json()).items?.[0]?.id;
     if (!accId || !accId2 || !propId) return;
+    const unitId = await getUnitForProperty(request, base, headers, propId);
+    if (!unitId) return;
 
     const partyId = `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const marker = `TX35-${Date.now()}`;
@@ -1416,7 +1530,7 @@ test.describe('Transactions — Partial payment and Undo Last Payment UI', () =>
     const createResp = await request.post(`${base}/transactions/records`, {
       headers,
       data: {
-        type: 'rent_advice', date: today, property_id: propId,
+        type: 'rent_advice', date: today, property_id: propId, unit_id: unitId,
         party_type: 'tenant', party_id: partyId, amount: 10000,
         dr_account_id: accId, cr_account_id: accId2, status: 'sent', remarks: marker,
         created_by: auth.model?.id,
@@ -1477,6 +1591,8 @@ test.describe('Transactions — Partial payment and Undo Last Payment UI', () =>
     const propResp = await request.get(`${base}/properties/records?perPage=1`, { headers });
     const propId = (await propResp.json()).items?.[0]?.id;
     if (!accId || !accId2 || !propId) return;
+    const unitId = await getUnitForProperty(request, base, headers, propId);
+    if (!unitId) return;
 
     const marker = `TX36-${Date.now()}`;
     const createResp = await request.post(`${base}/transactions/records`, {
@@ -1485,6 +1601,7 @@ test.describe('Transactions — Partial payment and Undo Last Payment UI', () =>
         type: 'rent_advice',
         date: new Date().toISOString().slice(0, 10),
         property_id: propId,
+        unit_id: unitId,
         party_type: 'tenant',
         party_id: `TXTEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         amount: 10000,
